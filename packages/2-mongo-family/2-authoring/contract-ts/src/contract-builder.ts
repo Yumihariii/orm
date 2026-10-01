@@ -1952,6 +1952,8 @@ function buildModels(
       );
     }
 
+    assertUniqueDiscriminatorValues(modelBuilder);
+
     const storage = {
       ...(modelBuilder.__collection ? { collection: modelBuilder.__collection } : {}),
       ...(modelBuilder.__storageRelations ? { relations: modelBuilder.__storageRelations } : {}),
@@ -1973,6 +1975,28 @@ function buildModels(
   }
 
   return builtModels;
+}
+
+function assertUniqueDiscriminatorValues(modelBuilder: AnyModelBuilder): void {
+  const variantsByValue = new Map<string, string>();
+  for (const [variantName, { value }] of Object.entries(modelBuilder.__variants ?? {})) {
+    const existingVariant = variantsByValue.get(value);
+    if (existingVariant !== undefined) {
+      throw contractError(
+        'CONTRACT.ARGUMENT_INVALID',
+        `Discriminator value "${value}" is used by both "${existingVariant}" and "${variantName}" on base model "${modelBuilder.__name}".`,
+        {
+          meta: {
+            modelName: modelBuilder.__name,
+            value,
+            variants: [existingVariant, variantName],
+            reason: 'discriminator-value-duplicate',
+          },
+        },
+      );
+    }
+    variantsByValue.set(value, variantName);
+  }
 }
 
 function deriveRoots(
