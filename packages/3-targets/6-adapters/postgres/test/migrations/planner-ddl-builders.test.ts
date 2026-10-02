@@ -29,8 +29,8 @@ function col(overrides: Partial<TypedColumn> = {}): TypedColumn {
   return { codecId: 'pg/text@1', ...overrides };
 }
 
-function listColumn(typeText: string): DefaultColumn {
-  return { typeText, dataTypeId: 'pg/text', many: true };
+function listColumn(baseTypeName: string): DefaultColumn {
+  return { baseTypeName, dataType: 'pg/text', many: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +203,7 @@ describe('renderDefaultLiteral', () => {
   it('renders JSON object for jsonb column', () => {
     const result = renderDefaultLiteral(
       { key: 'val' },
-      { typeText: 'jsonb', dataTypeId: 'pg/jsonb' },
+      { baseTypeName: 'jsonb', dataType: 'pg/jsonb' },
     );
     expect(result).toBe(`'{"key":"val"}'::jsonb`);
   });

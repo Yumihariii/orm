@@ -42,14 +42,14 @@ import {
   detectDestructiveChanges,
 } from '../src/core/migrations/contract-to-schema-ir';
 
-const testRenderer: DefaultRenderer = (def: ColumnDefault, _column, { typeText }) => {
+const testRenderer: DefaultRenderer = (def: ColumnDefault, _column, { baseTypeName }) => {
   if (def.kind === 'function') return def.expression;
   const { value } = def;
   if (typeof value === 'string') return `'${value.replaceAll("'", "''")}'`;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (value === null) return 'NULL';
   const json = JSON.stringify(value);
-  if (typeText === 'json' || typeText === 'jsonb') return `'${json}'::${typeText}`;
+  if (baseTypeName === 'json' || baseTypeName === 'jsonb') return `'${json}'::${baseTypeName}`;
   return `'${json}'`;
 };
 

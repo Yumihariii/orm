@@ -115,7 +115,7 @@ describe("a literal-shaped sql`'{}'::jsonb` body on Postgres", () => {
     expect(resolved).toEqual({ kind: 'literal', value: {} });
     if (resolved.kind !== 'literal') throw new Error('literal expected');
     expect(
-      renderDefaultLiteral(resolved.value, { typeText: 'jsonb', dataTypeId: 'pg/jsonb' }),
+      renderDefaultLiteral(resolved.value, { baseTypeName: 'jsonb', dataType: 'pg/jsonb' }),
     ).toBe("'{}'::jsonb");
   });
 });

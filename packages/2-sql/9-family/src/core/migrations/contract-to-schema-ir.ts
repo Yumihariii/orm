@@ -47,12 +47,12 @@ import { sqlFamilyError } from '../errors';
  * Default value serialization is target-specific (quoting, casting, type syntax vary
  * between Postgres, MySQL, SQLite, …). The target provides its renderer when calling
  * `contractToSchemaIR`, keeping the family layer target-agnostic. `type.dataType` is the id of
- * the data type the column's codec represents, and `type.typeText` its name without parameters.
+ * the data type the column's codec represents, and `type.baseTypeName` its base name.
  */
 export type DefaultRenderer = (
   def: ColumnDefault,
   column: StorageColumn,
-  type: { readonly dataType: string; readonly typeText: string },
+  type: { readonly dataType: string; readonly baseTypeName: string },
 ) => string;
 
 /**
@@ -106,7 +106,7 @@ function convertColumn(
     ...ifDefined(
       'default',
       column.default != null && renderDefault
-        ? renderDefault(column.default, column, { dataType: dataType.id, typeText: baseTypeName })
+        ? renderDefault(column.default, column, { dataType: dataType.id, baseTypeName })
         : undefined,
     ),
     // Contract-derived columns are resolved by construction: the computed
