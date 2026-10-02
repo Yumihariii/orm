@@ -6,8 +6,9 @@
  *
  * Usage: pnpm exec tsx data-type-in-contract.ts [project-root] [--data-type <codec id>=<data type id>]...
  *
- * `--data-type` names the data type of a codec the script's table does not know, such as an
- * extension's own codec. It cannot change the data type of a codec the table knows.
+ * `--data-type` names the data type of a codec the script's table does not know for a contract's
+ * target, such as an extension's own codec. It cannot change the data type of a codec the table
+ * knows for that target.
  *
  * The project root defaults to the working directory. The script reads and writes files only. It
  * needs no database, network or configured stack, and a project already in the new format is left
@@ -418,14 +419,6 @@ interface Options {
   readonly errors: readonly string[];
 }
 
-function knownDataType(codecId: string): string | undefined {
-  for (const table of Object.values(DATA_TYPES)) {
-    const dataType = table[codecId];
-    if (dataType !== undefined) return dataType;
-  }
-  return undefined;
-}
-
 function parseOptions(args: readonly string[]): Options {
   const dataTypes = new Map<string, string>();
   const errors: string[] = [];
@@ -445,11 +438,6 @@ function parseOptions(args: readonly string[]): Options {
       errors.push(
         `--data-type ${value}: expected <codec id>=<data type id>, for example acme/shape@1=acme/shape`,
       );
-      continue;
-    }
-    const known = knownDataType(codecId);
-    if (known !== undefined) {
-      errors.push(`--data-type ${value}: the script already maps ${codecId} to ${known}`);
       continue;
     }
     dataTypes.set(codecId, dataType);
@@ -801,6 +789,16 @@ function main({ root, dataTypes, errors }: Options): number {
       target: contract['target'],
       defaultRewrites: rewrite.defaultRewrites,
     });
+  }
+
+  for (const target of [...new Set(plans.map((plan) => plan.target))].sort(compareCodeUnits)) {
+    for (const [codecId, dataType] of dataTypes) {
+      const known = DATA_TYPES[target]?.[codecId];
+      if (known !== undefined)
+        stops.push(
+          `--data-type ${codecId}=${dataType}: the script already maps ${codecId} to ${known} on target ${target}`,
+        );
+    }
   }
 
   const hashes = new Map<string, string>();

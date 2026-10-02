@@ -37,7 +37,7 @@ interface TypeSpec {
 }
 
 interface ContractSpec {
-  readonly target: 'postgres' | 'sqlite';
+  readonly target: 'postgres' | 'sqlite' | 'acme';
   readonly tables: Readonly<Record<string, readonly ColumnSpec[]>>;
   readonly types?: readonly TypeSpec[];
   readonly extensions?: (format: Format) => JsonObject;
@@ -91,7 +91,7 @@ function storageJson(spec: ContractSpec, format: Format): Record<string, Json> {
       ? { id: 'public', tables }
       : {
           id: 'public',
-          kind: spec.target === 'postgres' ? 'postgres-schema' : 'sqlite-schema',
+          kind: `${spec.target}-schema`,
           entries: { table: tables },
         };
   const storage: Record<string, Json> = { namespaces: { public: namespace } };
@@ -208,7 +208,7 @@ function dtsType(type: TypeSpec, format: Format): string {
 }
 
 function contractDts(spec: ContractSpec, format: Format, storageHash: string): string {
-  const facade = spec.target === 'postgres' ? '@prisma/orm-postgres' : '@prisma/orm-sqlite';
+  const facade = spec.target === 'acme' ? '@acme/orm' : `@prisma/orm-${spec.target}`;
   const tables = Object.entries(spec.tables)
     .map(([tableName, columns]) =>
       [
@@ -721,6 +721,35 @@ function unknownCodec(format: Format): Record<string, string> {
   };
 }
 
+const acmeSpec: ContractSpec = {
+  target: 'acme',
+  tables: {
+    thing: [
+      {
+        name: 'id',
+        codecId: 'sql/int@1',
+        nativeType: 'int4',
+        dataType: 'acme/int4',
+        nullable: false,
+      },
+    ],
+  },
+};
+
+function unknownTarget(format: Format): Record<string, string> {
+  const thing = contractFiles(acmeSpec, format);
+  return {
+    'prisma/contract.json': emittedJson(thing.contract),
+    'prisma/contract.d.ts': thing.dts,
+    [`migrations/snapshots/${thing.hash}/contract.json`]: snapshotJson(thing.contract),
+    [`migrations/snapshots/${thing.hash}/contract.d.ts`]: thing.dts,
+    ...migrationFiles(
+      { dir: 'migrations/app/20260101T0000_initial', from: null, to: thing.hash },
+      '../../snapshots',
+    ),
+  };
+}
+
 const userSpec: ContractSpec = {
   target: 'postgres',
   tables: {
@@ -807,4 +836,5 @@ writeCase('sqlite-defaults', sqliteDefaults);
 writeCase('snapshot-already-present', snapshotAlreadyPresent);
 writeCase('stale-hash', staleHash);
 writeCase('unknown-codec', unknownCodec);
+writeCase('unknown-target', unknownTarget);
 writeUnchangedCase('snapshot-collision', snapshotCollision());

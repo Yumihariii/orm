@@ -56,7 +56,7 @@ Run your formatter afterwards. The script replaces text in `migration.ts` and `c
 
 A contract already in the new format is never changed, even when its stored hash does not match its content, so a project already in the new format is left unchanged. It prints `<file>: stored hash did not recompute; rehashed from content` for an old-format contract whose stored storage hash does not match its content, and rewrites it anyway. It changes no file and exits 1 when a column uses a codec it does not know (`<file>: unknown codec <id>; name its data type with --data-type <id>=<data type id>`) or when a renamed snapshot directory already exists with different content.
 
-The script knows every codec that Prisma and its own extensions ship. For a codec from another extension, pass the line that extension publishes in its upgrade notes, once per codec, for example `--data-type acme/shape@1=acme/shape`. The option cannot change the data type of a codec the script already knows.
+The script knows every codec that Prisma and its own extensions ship. For a codec from another extension, pass the line that extension publishes in its upgrade notes, once per codec, for example `--data-type acme/shape@1=acme/shape`. The option cannot change the data type of a codec the script already knows for a contract's target, but it can name the data type of a shared `sql/*` codec on a target the script does not know.
 
 On SQLite, the contract stores a literal default of a `BigInt` column as digit text, as it does for an `Int` column, so a migration planned from now on writes `DEFAULT 42` instead of `DEFAULT '42'`. A database created with `DEFAULT '42'` still verifies. Tests that assert the planned SQL change to match.
 

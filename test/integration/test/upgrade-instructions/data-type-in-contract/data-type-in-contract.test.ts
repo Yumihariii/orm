@@ -286,8 +286,29 @@ describe('a codec the script does not know', () => {
     expect(unchanged(run)).toEqual({
       status: 1,
       stdout: '',
-      stderr: '--data-type pg/uuid@1=pg/text: the script already maps pg/uuid@1 to pg/uuid\n',
+      stderr:
+        '--data-type pg/uuid@1=pg/text: the script already maps pg/uuid@1 to pg/uuid on target postgres\n',
       tree: expectedTree('unknown-codec', 'before'),
+    });
+  });
+});
+
+describe('a contract on a target the script does not know', () => {
+  it('takes --data-type for a codec the script maps on other targets', () => {
+    const run = runScript(copyFixture('unknown-target', 'before'), appScript, [
+      '--data-type',
+      'sql/int@1=acme/int4',
+    ]);
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(run.root),
+    }).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      tree: expectedTree('unknown-target', 'after'),
     });
   });
 });
