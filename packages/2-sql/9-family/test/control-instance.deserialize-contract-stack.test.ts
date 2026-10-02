@@ -7,7 +7,11 @@ import {
 import { UNBOUND_NAMESPACE_ID } from '@internal/framework-components/ir';
 import { sqlDataType } from '@internal/sql-contract/data-type';
 import { col, model, table } from '@internal/sql-contract/factories';
-import type { SqlStorage, StorageTable } from '@internal/sql-contract/types';
+import type {
+  SqlControlDriverInstance,
+  SqlStorage,
+  StorageTable,
+} from '@internal/sql-contract/types';
 import { blindCast } from '@internal/utils/casts';
 import { createContract } from '@repo/test-utils';
 import { describe, expect, it } from 'vitest';
@@ -180,5 +184,41 @@ describe('deserializeContract checks each column against the stack', () => {
         `${columnsPath}.address: a value-object column needs the stack's value-object storage type, and the stack declares none`,
       );
     });
+  });
+});
+
+describe('every family entry point that takes a contract checks it against the stack', () => {
+  const mismatched = () => contractWith({ user: table({ id: col('t/text', 't/int4@1') }) });
+  const refusal = `${columnsPath}.id: codec t/int4@1 represents t/int4, not t/text`;
+  const driver = blindCast<
+    SqlControlDriverInstance<string>,
+    'the check runs before the driver is used'
+  >({});
+
+  it('verify refuses a column whose codec represents another data type', async () => {
+    await expect(
+      familyInstance('Jsonb').verify({
+        driver,
+        contract: mismatched(),
+        expectedTargetId: 't',
+        contractPath: 'contract.json',
+      }),
+    ).rejects.toThrow(
+      expect.objectContaining({ code: 'CONTRACT.VALIDATION_FAILED', message: refusal }),
+    );
+  });
+
+  it('verifySchema refuses a column whose codec represents another data type', () => {
+    expect(() =>
+      familyInstance('Jsonb').verifySchema({
+        contract: mismatched(),
+        schema: blindCast<
+          Parameters<ReturnType<typeof familyInstance>['verifySchema']>[0]['schema'],
+          'the check runs before the schema is read'
+        >({}),
+        strict: false,
+        frameworkComponents: [],
+      }),
+    ).toThrow(expect.objectContaining({ code: 'CONTRACT.VALIDATION_FAILED', message: refusal }));
   });
 });

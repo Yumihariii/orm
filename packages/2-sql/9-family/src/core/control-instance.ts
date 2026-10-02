@@ -576,7 +576,7 @@ export function createSqlFamilyInstance<TTargetId extends string>(
         ? [{ spaceId: extension.id, contract: extension.contractSpace.contractJson }]
         : [],
   );
-  const deserializeWithTargetSerializer = (contractOrJson: unknown): Contract<SqlStorage> => {
+  const loadContract = (contractOrJson: unknown): Contract<SqlStorage> => {
     const serializer = targetSerializer ?? new SqlContractSerializer();
     const json =
       targetSerializer !== undefined && !isPlainRecord(contractOrJson)
@@ -587,7 +587,9 @@ export function createSqlFamilyInstance<TTargetId extends string>(
             >(contractOrJson),
           )
         : contractOrJson;
-    return serializer.deserializeContract(json);
+    const contract = serializer.deserializeContract(json);
+    assertContractMatchesStack(contract, stack);
+    return contract;
   };
 
   const signSpaceMarker = async (
@@ -665,9 +667,7 @@ export function createSqlFamilyInstance<TTargetId extends string>(
     extensionIds,
 
     deserializeContract(contractJson: unknown): Contract {
-      const contract = deserializeWithTargetSerializer(contractJson);
-      assertContractMatchesStack(contract, stack);
-      return contract;
+      return loadContract(contractJson);
     },
 
     async verify(verifyOptions: {
@@ -686,7 +686,7 @@ export function createSqlFamilyInstance<TTargetId extends string>(
       } = verifyOptions;
       const startTime = Date.now();
 
-      const contract = deserializeWithTargetSerializer(rawContract);
+      const contract = loadContract(rawContract);
 
       const contractStorageHash = contract.storage.storageHash;
       const contractProfileHash = contract.profileHash;
@@ -802,7 +802,7 @@ export function createSqlFamilyInstance<TTargetId extends string>(
       readonly strict: boolean;
       readonly frameworkComponents: ReadonlyArray<TargetBoundComponentDescriptor<'sql', string>>;
     }): VerifyDatabaseSchemaResult {
-      const contract = deserializeWithTargetSerializer(options.contract);
+      const contract = loadContract(options.contract);
       if (!diffSchema) {
         throw missingDescriptorOperationError(target.targetId, 'diffSchema');
       }
@@ -859,7 +859,7 @@ export function createSqlFamilyInstance<TTargetId extends string>(
     }): Promise<SignDatabaseResult> {
       const { driver, contract: contractInput, contractPath, configPath } = options;
       const startTime = Date.now();
-      const contract = deserializeWithTargetSerializer(contractInput);
+      const contract = loadContract(contractInput);
       const [signature] = await signSpaces(driver, [{ space: APP_SPACE_ID, contract }]);
       if (signature === undefined) {
         throw new InternalError('signing the app space returned no signature');

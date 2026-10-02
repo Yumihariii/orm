@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import postgres from '@internal/postgres/runtime';
 import { PostgresContractSerializer } from '@internal/target-postgres/runtime';
 import { dirname, join } from 'pathe';
 import { describe, expect, it } from 'vitest';
@@ -35,6 +36,18 @@ describe('a contract emitted before columns named their data type', () => {
     const contractJson: unknown = JSON.parse(readFileSync(fixturePath, 'utf8'));
     expect(() => new PostgresContractSerializer().deserializeContract(contractJson)).toThrow(
       expect.objectContaining({ message: expect.not.stringMatching(/upgrade|script/i) }),
+    );
+  });
+
+  it('is refused when a runtime client is created from it', () => {
+    const contractJson: unknown = JSON.parse(readFileSync(fixturePath, 'utf8'));
+    expect(() => postgres({ contractJson, url: 'postgres://localhost:1/never-connected' })).toThrow(
+      expect.objectContaining({
+        code: 'CONTRACT.VALIDATION_FAILED',
+        message: expect.stringContaining(
+          `storage.namespaces.auth.entries.table.audit_log_entries.columns.created_at.nativeType: contracts no longer store a column's database type name; the column names its data type in "dataType"`,
+        ),
+      }),
     );
   });
 });
