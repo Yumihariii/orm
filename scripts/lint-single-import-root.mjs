@@ -22,7 +22,9 @@
  * `test/integration/test/packaging/` are exempt for the same reason: their
  * published-root specifiers are strings handed to scratch projects that
  * install packed tarballs and run in a child process, so both roots never
- * load into one module graph.
+ * load into one module graph. The upgrade script's fixtures under
+ * `test/integration/test/upgrade-instructions/data-type-in-contract/fixtures/`
+ * are user projects the script rewrites as text; nothing imports them.
  *
  * Exits 1 listing every mixed package; exits 0 otherwise.
  */
@@ -32,7 +34,10 @@ import { extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CONSUMER_ROOTS = ['examples', 'apps', 'test'];
-const EXEMPT_SUBTREES = ['test/integration/test/packaging'];
+const EXEMPT_SUBTREES = [
+  'test/integration/test/packaging',
+  'test/integration/test/upgrade-instructions/data-type-in-contract/fixtures',
+];
 const INTERNAL_SCOPE = '@internal/';
 const PUBLISHED_SCOPE = '@prisma/orm-';
 const INCLUDED_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
