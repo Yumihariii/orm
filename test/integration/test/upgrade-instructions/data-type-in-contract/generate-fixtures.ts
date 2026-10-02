@@ -367,14 +367,25 @@ function extensionsDts(format: Format): string[] {
     "      readonly familyId: 'sql';",
     "      readonly id: 'pgvector';",
     '      readonly types: {',
-    '        readonly storage: readonly [',
-    '          {',
-    "            readonly familyId: 'sql';",
-    ...(format === 'old' ? ["            readonly nativeType: 'vector';"] : []),
-    "            readonly targetId: 'postgres';",
-    "            readonly typeId: 'pg/vector@1';",
-    '          },',
-    '        ];',
+    '        readonly codecTypes: {',
+    '          readonly import: {',
+    "            readonly alias: 'PgVectorTypes';",
+    "            readonly named: 'CodecTypes';",
+    "            readonly package: '@prisma/orm-extension-pgvector/codec-types';",
+    '          };',
+    '        };',
+    ...(format === 'old'
+      ? [
+          '        readonly storage: readonly [',
+          '          {',
+          "            readonly familyId: 'sql';",
+          "            readonly nativeType: 'vector';",
+          "            readonly targetId: 'postgres';",
+          "            readonly typeId: 'pg/vector@1';",
+          '          },',
+          '        ];',
+        ]
+      : []),
     '      };',
     '    };',
     '  };',
@@ -479,14 +490,25 @@ const pgvectorExtension = (format: Format): JsonObject => ({
     kind: 'extension',
     targetId: 'postgres',
     types: {
-      storage: [
-        {
-          familyId: 'sql',
-          ...(format === 'old' ? { nativeType: 'vector' } : {}),
-          targetId: 'postgres',
-          typeId: 'pg/vector@1',
+      codecTypes: {
+        import: {
+          alias: 'PgVectorTypes',
+          named: 'CodecTypes',
+          package: '@prisma/orm-extension-pgvector/codec-types',
         },
-      ],
+      },
+      ...(format === 'old'
+        ? {
+            storage: [
+              {
+                familyId: 'sql',
+                nativeType: 'vector',
+                targetId: 'postgres',
+                typeId: 'pg/vector@1',
+              },
+            ],
+          }
+        : {}),
     },
     version: '0.0.1',
   },

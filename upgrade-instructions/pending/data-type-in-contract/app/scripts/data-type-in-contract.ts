@@ -621,24 +621,19 @@ function rewriteContract(contract: JsonRecord, extra: ReadonlyMap<string, string
     rewritten[key] = key === 'extensions' || key === '_generated' ? child : visit(child, [key]);
   }
   const extensions = contract['extensions'];
-  if (isRecord(extensions)) {
-    const nextExtensions: JsonRecord = {};
-    for (const [packId, pack] of Object.entries(extensions)) {
+  for (const pack of isRecord(extensions) ? Object.values(extensions) : []) {
+    const types = isRecord(pack) ? pack['types'] : undefined;
+    const storage = isRecord(types) ? types['storage'] : undefined;
+    if (Array.isArray(storage) && storage.some((entry) => isRecord(entry) && 'nativeType' in entry))
+      changed = true;
+  }
+  if (changed && isRecord(extensions)) {
+    rewritten['extensions'] = mapRecord(extensions, (_packId, pack) => {
       const types = isRecord(pack) ? pack['types'] : undefined;
-      const storage = isRecord(types) ? types['storage'] : undefined;
-      if (!isRecord(pack) || !isRecord(types) || !Array.isArray(storage)) {
-        nextExtensions[packId] = pack;
-        continue;
-      }
-      const nextStorage = storage.map((entry) => {
-        if (!isRecord(entry) || !('nativeType' in entry)) return entry;
-        changed = true;
-        const { nativeType: _nativeType, ...rest } = entry;
-        return rest;
-      });
-      nextExtensions[packId] = { ...pack, types: { ...types, storage: nextStorage } };
-    }
-    rewritten['extensions'] = nextExtensions;
+      if (!isRecord(pack) || !isRecord(types) || !('storage' in types)) return pack;
+      const { storage: _storage, ...rest } = types;
+      return { ...pack, types: rest };
+    });
   }
   const enums =
     target === 'sqlite' && changed
@@ -783,18 +778,37 @@ function memberOf(
   return undefined;
 }
 
-function memberRemoval(
+function bracketEnd(text: string, open: number): number {
+  let depth = 0;
+  let quote: string | undefined;
+  for (let index = open; index < text.length; index++) {
+    const char = text[index];
+    if (quote !== undefined) {
+      if (char === '\\') index++;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') quote = char;
+    else if (char === '[' || char === '{' || char === '(') depth++;
+    else if (char === ']' || char === '}' || char === ')') {
+      depth--;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return text.length;
+}
+
+function statementRemoval(
   text: string,
   start: number,
-  length: number,
+  end: number,
 ): { start: number; end: number; text: string } {
-  const lineStart = text.lastIndexOf('\n', start) + 1;
-  const lineEnd = text.indexOf('\n', start);
-  const line = text.slice(lineStart, lineEnd === -1 ? text.length : lineEnd);
-  if (line.trim() === `${text.slice(start, start + length)};`)
-    return { start: lineStart, end: lineEnd === -1 ? text.length : lineEnd + 1, text: '' };
-  const after = /^;\s*/.exec(text.slice(start + length));
-  return { start, end: start + length + (after?.[0].length ?? 0), text: '' };
+  const after = /^;?[ \t]*/.exec(text.slice(end))?.[0].length ?? 0;
+  const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+  const ownsLines = text.slice(lineStart, start).trim() === '' && text[end + after] === '\n';
+  return ownsLines
+    ? { start: lineStart, end: end + after + 1, text: '' }
+    : { start, end: end + after, text: '' };
 }
 
 function quoteIntegers(text: string): string {
@@ -813,14 +827,17 @@ function rewriteDts(
   const blocks = scanBlocks(text);
   const edits: { start: number; end: number; text: string }[] = [];
 
+  for (const match of text.matchAll(/readonly storage: readonly \[/g)) {
+    const types = innermostBlock(blocks, match.index);
+    if (types?.label !== 'types' || types.parent?.parent?.label !== 'extensions') continue;
+    const end = bracketEnd(text, match.index + match[0].length - 1);
+    edits.push(statementRemoval(text, match.index, end));
+  }
+
   for (const match of text.matchAll(/readonly nativeType: (['"])(?:\\.|(?!\1).)*\1/g)) {
     const block = innermostBlock(blocks, match.index);
     if (block === undefined) continue;
     const codecId = memberOf(text, blocks, block, 'codecId');
-    if (codecId === undefined && memberOf(text, blocks, block, 'typeId') !== undefined) {
-      edits.push(memberRemoval(text, match.index, match[0].length));
-      continue;
-    }
     const dataType = codecId === undefined ? undefined : table[codecId];
     if (dataType === undefined) continue;
     edits.push({

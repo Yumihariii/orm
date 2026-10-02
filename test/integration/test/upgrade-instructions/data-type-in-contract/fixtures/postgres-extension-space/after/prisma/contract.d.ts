@@ -69,13 +69,13 @@ export type Contract = {
       readonly familyId: 'sql';
       readonly id: 'pgvector';
       readonly types: {
-        readonly storage: readonly [
-          {
-            readonly familyId: 'sql';
-            readonly targetId: 'postgres';
-            readonly typeId: 'pg/vector@1';
-          },
-        ];
+        readonly codecTypes: {
+          readonly import: {
+            readonly alias: 'PgVectorTypes';
+            readonly named: 'CodecTypes';
+            readonly package: '@prisma/orm-extension-pgvector/codec-types';
+          };
+        };
       };
     };
   };

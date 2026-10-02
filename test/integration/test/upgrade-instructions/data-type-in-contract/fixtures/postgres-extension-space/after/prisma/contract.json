@@ -94,13 +94,13 @@
       "kind": "extension",
       "targetId": "postgres",
       "types": {
-        "storage": [
-          {
-            "familyId": "sql",
-            "targetId": "postgres",
-            "typeId": "pg/vector@1"
+        "codecTypes": {
+          "import": {
+            "alias": "PgVectorTypes",
+            "named": "CodecTypes",
+            "package": "@prisma/orm-extension-pgvector/codec-types"
           }
-        ]
+        }
       },
       "version": "0.0.1"
     }
