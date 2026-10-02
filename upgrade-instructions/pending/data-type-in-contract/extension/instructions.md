@@ -166,7 +166,7 @@ column(pgVectorDescriptor.factory({ length }), pgVectorDescriptor.codecId, { len
 column(pgVectorDescriptor.factory({ length }), pgVectorDescriptor.codecId, { length });
 ```
 
-Delete the `storage` list from the pack metadata's `types`: nothing reads it, and `StorageTypeMetadata`, its type, is deleted from `@internal/sql-contract/pack-types`. Contracts no longer carry `extensions.<pack>.types.storage`; the script removes it from yours.
+Delete the `storage` list from the pack metadata's `types`: nothing reads it, and `StorageTypeMetadata`, its type, is deleted from `@internal/sql-contract/pack-types`. Delete an import that only the list used, and the part of a doc comment that describes the list. Contracts no longer carry `extensions.<pack>.types.storage`; the script removes it from yours.
 
 ```ts
 // before
