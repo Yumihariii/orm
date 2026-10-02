@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { lstatSync, renameSync, symlinkSync } from 'node:fs';
+import { lstatSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'pathe';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
@@ -109,6 +109,27 @@ describe('the project root', () => {
     expect({ status: result.status, tree: readTree(root) }).toEqual({
       status: 0,
       tree: expectedTree('sqlite-defaults', 'after'),
+    });
+  });
+});
+
+describe('a folder with no SQL contract', () => {
+  it('says it found no SQL contract under the root, changes nothing and exits 0', () => {
+    const root = makeWorkDir('data-type-in-contract-empty-');
+    writeFileSync(join(root, 'package.json'), '{ "name": "not-a-prisma-project" }\n');
+
+    const run = runScript(root);
+
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(root),
+    }).toEqual({
+      status: 0,
+      stdout: `No SQL contract was found under ${root}; nothing changed.\n`,
+      stderr: '',
+      tree: { 'package.json': '{ "name": "not-a-prisma-project" }\n' },
     });
   });
 });

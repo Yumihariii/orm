@@ -1124,10 +1124,13 @@ function count(amount: number, singular: string, plural: string): string {
 }
 
 function summary(
+  root: string,
+  contractsFound: number,
   files: number,
   directories: number,
   hashes: ReadonlyMap<string, string>,
 ): readonly string[] {
+  if (contractsFound === 0) return [`No SQL contract was found under ${root}; nothing changed.`];
   if (files === 0 && directories === 0)
     return ['The project is already in the new format; nothing changed.'];
   const renamed = count(directories, 'snapshot directory', 'snapshot directories');
@@ -1153,6 +1156,7 @@ function main({ root, dataTypes, errors }: Options): number {
   const plans: ContractPlan[] = [];
   const notices: string[] = [];
   const stops: string[] = [];
+  let contractsFound = 0;
 
   for (const path of files.json) {
     const text = readFileSync(path, 'utf8');
@@ -1172,6 +1176,7 @@ function main({ root, dataTypes, errors }: Options): number {
       continue;
     const storage = contract['storage'];
     if (!isRecord(storage)) continue;
+    contractsFound++;
     const snapshot = isSnapshotContract(path);
     const stored = storage['storageHash'];
     const oldHash = snapshot ? basename(dirname(path)) : typeof stored === 'string' ? stored : '';
@@ -1331,7 +1336,10 @@ function main({ root, dataTypes, errors }: Options): number {
     return 1;
   }
   const rewrittenFiles = snapshotRewrites.length + referenceWrites.size + contractWrites.size;
-  const lines = [...notices, ...summary(rewrittenFiles, removals.size, hashes)];
+  const lines = [
+    ...notices,
+    ...summary(root, contractsFound, rewrittenFiles, removals.size, hashes),
+  ];
   process.stdout.write(`${lines.join('\n')}\n`);
   return 0;
 }
