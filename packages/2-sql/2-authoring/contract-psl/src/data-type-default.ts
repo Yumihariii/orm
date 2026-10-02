@@ -322,7 +322,7 @@ export function readStoredValue(input: {
   readonly fieldPath: string;
 }): DefaultDiagnosticResult {
   const reading = storedValueReader(input).read(input.value, undefined);
-  return reading.ok ? reading : refusalDiagnostic(reading.refusal, input.fieldPath);
+  return reading.ok ? reading : refusalDiagnostic(reading.refusal, `Field "${input.fieldPath}"`);
 }
 
 /**
@@ -466,15 +466,43 @@ export function lowerDataTypeDefault(input: {
   readonly fieldPath: string;
 }): DefaultDiagnosticResult {
   const read = readDataTypeDefault(input);
-  return read.ok ? read : refusalDiagnostic(read.refusal, input.fieldPath);
+  return read.ok ? read : refusalDiagnostic(read.refusal, `Field "${input.fieldPath}"`);
+}
+
+/**
+ * Reads one value written in a contract source outside a default, such as an enum member, for a codec, as {@link lowerDataTypeDefault} reads a default: the literal's entry gives it a data type, the codec's data type takes it directly or through a cast, and the codec checks it. A refusal is worded for `subject`.
+ */
+export function readWrittenValueForCodec(input: {
+  readonly value: string | number | boolean;
+  readonly codecId: string;
+  readonly codecLookup: CodecLookupWithDescriptors | undefined;
+  readonly support: DataTypeSupport;
+  readonly subject: string;
+}): DefaultDiagnosticResult {
+  const { value } = input;
+  const written: WrittenValue =
+    typeof value === 'string'
+      ? { kind: 'string', text: value }
+      : typeof value === 'number'
+        ? { kind: 'number', text: String(value) }
+        : { kind: 'boolean', value };
+  const read = readDataTypeDefault({
+    written,
+    isList: false,
+    column: { codecId: input.codecId },
+    codecLookup: input.codecLookup,
+    support: input.support,
+    fieldPath: input.subject,
+  });
+  return read.ok ? read : refusalDiagnostic(read.refusal, input.subject);
 }
 
 /** A refusal worded as a PSL diagnostic's code and message. */
 function refusalDiagnostic(
   refusal: DefaultRefusal,
-  fieldPath: string,
+  subject: string,
 ): Extract<DefaultDiagnosticResult, { readonly ok: false }> {
-  const where = `Field "${fieldPath}"${at(refusal.elementIndex)}`;
+  const where = `${subject}${at(refusal.elementIndex)}`;
   switch (refusal.kind) {
     case 'unreadable':
       return {

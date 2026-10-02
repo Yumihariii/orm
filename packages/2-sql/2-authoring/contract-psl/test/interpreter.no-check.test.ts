@@ -12,6 +12,7 @@ import { createTestSqlNamespace } from '../../../1-core/contract/test/test-suppo
 import { testSqlTypeLookups } from '../../../1-core/contract/test/test-type-lookups';
 import { interpretPslDocumentToSqlContract } from '../src/interpreter';
 import { fixtureTypeLookups } from './fixture-codec-descriptors';
+import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createBuiltinLikeControlMutationDefaults,
   postgresEnumInferenceCodecs,
@@ -54,6 +55,7 @@ const authoringContributions = {
   type: {},
   valueObjectStorageType: 'Jsonb',
   pslBlockDescriptors: { enum: testEnumPslBlockDescriptor },
+  dataTypes: fixtureDataTypeSupport.entries,
 };
 
 const builtinControlMutationDefaults = createBuiltinLikeControlMutationDefaults();

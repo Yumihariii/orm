@@ -18,11 +18,11 @@ const json = (body: string): string => `json${BACKTICK}${body}${BACKTICK}`;
 
 const stack = createControlStack({ family: sql, target: sqlite, adapter: sqliteAdapter });
 
-async function author(fields: string) {
+async function author(fields: string, blocks = '') {
   const schemaPath = join(mkdtempSync(join(tmpdir(), 'psl-sqlite-written-')), 'schema.prisma');
   writeFileSync(
     schemaPath,
-    `// use prisma-8\n\nmodel Row {\n  id Int @id\n${fields}\n}\n`,
+    `// use prisma-8\n\n${blocks}model Row {\n  id Int @id\n${fields}\n}\n`,
     'utf-8',
   );
   return prismaContract(schemaPath, {
@@ -155,4 +155,31 @@ describe('written values on SQLite', () => {
       }),
     ]);
   });
+});
+
+describe('enum members on SQLite', () => {
+  it.each(['sqlite/integer@1', 'sql/int@1'])(
+    'reads a whole-number member of an enum typed by %s as a written number is read, and stores digit text',
+    async (codecId) => {
+      const result = await author(
+        '  priority Priority @default(High)',
+        `enum Priority {\n  @@type("${codecId}")\n  Low = 1\n  High = 2\n}\n\n`,
+      );
+      if (!result.ok) throw new Error(JSON.stringify(result.failure.diagnostics));
+      const contract = JSON.parse(JSON.stringify(result.value));
+      const namespaceId = Object.keys(contract.domain.namespaces)[0] ?? '';
+      expect({
+        members: contract.domain.namespaces[namespaceId].enum.Priority.members,
+        values: contract.storage.namespaces[namespaceId].entries.valueSet.Priority.values,
+        default: findStorageColumn(result.value as Contract<SqlStorage>, 'priority')?.['default'],
+      }).toEqual({
+        members: [
+          { name: 'Low', value: '1' },
+          { name: 'High', value: '2' },
+        ],
+        values: ['1', '2'],
+        default: { kind: 'literal', value: '2' },
+      });
+    },
+  );
 });

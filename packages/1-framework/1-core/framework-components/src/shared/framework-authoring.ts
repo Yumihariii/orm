@@ -258,6 +258,11 @@ export function flushAuthoringWarnings(warnings: readonly AuthoringWarning[]): v
   }
 }
 
+/** A written value read for a codec: its stored form, or why it is refused. */
+export type WrittenValueReading =
+  | { readonly ok: true; readonly value: JsonValue }
+  | { readonly ok: false; readonly message: string };
+
 export interface AuthoringEntityContext {
   readonly family: string;
   readonly target: string;
@@ -271,6 +276,14 @@ export interface AuthoringEntityContext {
   readonly diagnostics?: AuthoringDiagnosticSink;
   /** Push channel for non-fatal authoring-time warnings emitted by the factory. */
   readonly warnings?: AuthoringWarningSink;
+  /**
+   * Reads a value written in the contract source, such as an enum member, the way a column default is read: the literal gives a value of a data type, the codec's data type takes it directly or through a cast, and the codec checks it. Returns the value's stored form, or why it is refused, worded for `subject`. Without it, or when it returns `undefined` for a codec the stack registers no descriptor for, the codec reads the written value as it is.
+   */
+  readonly readWrittenValue?: (input: {
+    readonly value: string | number | boolean;
+    readonly codecId: string;
+    readonly subject: string;
+  }) => WrittenValueReading | undefined;
   /**
    * The target's default codec ids for an `enum` block that omits `@@type`.
    * `text` is used when every member is a bare name or a string value;

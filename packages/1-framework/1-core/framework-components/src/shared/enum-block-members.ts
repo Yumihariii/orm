@@ -11,7 +11,7 @@ export interface EnumBlockMember {
 }
 
 /**
- * Reads the members of an `enum` block through its codec. A bare member is read from its own name.
+ * Reads the members of an `enum` block through its codec. A member's value is read as a column default is read, when the family gives a reader for written values (`ctx.readWrittenValue`); a bare member is read from its own name.
  * Pushes a diagnostic and returns `undefined` when the codec refuses a member, when two members
  * store the same value, or when the block has no members. Shared by every family's enum factory.
  */
@@ -29,7 +29,27 @@ export function readEnumBlockMembers(
 
   for (const [memberName, memberValue] of Object.entries(block.values)) {
     const span = block.parameterSpans[memberName] ?? block.span;
-    const written = memberValue === undefined ? memberName : memberValue;
+    const reading =
+      typeof memberValue === 'string' ||
+      typeof memberValue === 'number' ||
+      typeof memberValue === 'boolean'
+        ? ctx.readWrittenValue?.({
+            value: memberValue,
+            codecId,
+            subject: `enum "${block.name}" member "${memberName}"`,
+          })
+        : undefined;
+    if (reading !== undefined && !reading.ok) {
+      diagnostics?.push({
+        code: 'PSL_EXTENSION_INVALID_VALUE',
+        message: reading.message,
+        sourceId,
+        span,
+      });
+      memberError = true;
+      continue;
+    }
+    const written = reading?.value ?? (memberValue === undefined ? memberName : memberValue);
     let read: unknown;
     try {
       read = codec.decodeJson(written);

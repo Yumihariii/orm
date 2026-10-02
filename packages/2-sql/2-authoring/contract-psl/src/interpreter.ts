@@ -109,7 +109,7 @@ import { ifDefined } from '@internal/utils/defined';
 import { InternalError } from '@internal/utils/internal-error';
 import { notOk, ok, type Result } from '@internal/utils/result';
 import { contractError } from './contract-errors';
-import type { DataTypeSupport } from './data-type-default';
+import { type DataTypeSupport, readWrittenValueForCodec } from './data-type-default';
 import { defaultTableName } from './default-table-name';
 import {
   getAttribute,
@@ -2258,6 +2258,17 @@ export function interpretPslDocumentToSqlContract(
             blindCast<ContractSourceDiagnostic, 'sink diagnostics are span-compatible'>(d),
           );
         },
+      },
+      readWrittenValue: ({ value, codecId, subject }) => {
+        if (input.codecLookup?.descriptorFor(codecId) === undefined) return undefined;
+        const reading = readWrittenValueForCodec({
+          value,
+          codecId,
+          codecLookup: input.codecLookup,
+          support: dataTypeSupport,
+          subject,
+        });
+        return reading.ok ? reading : { ok: false, message: reading.message };
       },
       ...ifDefined('enumInferenceCodecs', input.enumInferenceCodecs),
     },
