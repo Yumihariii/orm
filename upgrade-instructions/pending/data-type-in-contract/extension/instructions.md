@@ -81,6 +81,21 @@ changes:
       matches:
         - '[''"`]sqlite/(?:json|datetime|bigint)[''"`]'
         - '\bsqlite(?:Json|Datetime|Bigint)\.id\b'
+  - id: canonical-form-of-a-column
+    summary: |
+      A column's canonical form comes from one function, `canonicalFormOf(codec, dataTypes)` in
+      `@internal/framework-components/codec`: the codec's `toCanonicalForm` when it declares one,
+      else its data type's. `CanonicalDateTimeOptions.dataTypeId` is renamed `ownerId`.
+      `SqlColumnDefaultIRInput` carries `toCanonicalForm` instead of `dataType`, and
+      `SqlColumnIRInput` gains `toCanonicalForm`. `DefaultMappingOptions.columnDataType` is
+      replaced by `columnCodec`, the column's codec descriptor.
+    detection:
+      glob: "**/*.{ts,mts,cts}"
+      matches:
+        - '\bCanonicalDateTimeOptions\b'
+        - '\bcanonicalDateTime\s*\('
+        - '\bcolumnDataType\b'
+        - '\bSqlColumnDefaultIR\b'
   - id: authoring-entry-key-checked
     summary: |
       Assembly refuses an authoring entry filed under the wrong key with
@@ -262,6 +277,22 @@ export class MyDatetimeDescriptor extends SqliteCodecDescriptor<void> {
 ```
 
 Because both big integer codecs store digit text, a migration planned for a SQLite `BigInt` column with a literal default writes `DEFAULT 42` instead of `DEFAULT '42'`; tests that assert planned SQLite SQL change to match. A database created with `DEFAULT '42'` still verifies.
+
+## `canonical-form-of-a-column`
+
+Read a column's canonical form through `canonicalFormOf`, and pass the renamed options:
+
+```ts
+// before
+canonicalDateTime(text, { shape: 'instant', dataTypeId: 'acme/instant' });
+mapDefault(stored, { dataTypeEntries, dataTypeLookup, columnDataType: codec.dataType });
+const toCanonical = codec.toCanonicalForm ?? dataTypes.get(codec.dataType)?.toCanonicalForm;
+
+// after
+canonicalDateTime(text, { shape: 'instant', ownerId: 'acme/instant' });
+mapDefault(stored, { dataTypeEntries, dataTypeLookup, columnCodec: codec });
+const toCanonical = canonicalFormOf(codec, dataTypes);
+```
 
 ## `authoring-entry-key-checked`
 
