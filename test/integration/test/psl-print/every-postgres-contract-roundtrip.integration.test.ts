@@ -250,6 +250,13 @@ const expectedRefusals: ReadonlyMap<string, ExpectedRefusal> = new Map<string, E
     },
   ],
   [
+    'test/integration/test/planner-golden/fixtures/postgres/generated/contract.json',
+    {
+      reason: 'no PSL type in the configured stack',
+      meta: { coordinate: '"public"."list"."bit"', dataType: 'pg/bit', codecId: 'pg/bit@1' },
+    },
+  ],
+  [
     'test/integration/test/ports/engines/queries/data_types/native/postgres/_fixture/string/generated/contract.json',
     {
       reason: 'no PSL type in the configured stack',
