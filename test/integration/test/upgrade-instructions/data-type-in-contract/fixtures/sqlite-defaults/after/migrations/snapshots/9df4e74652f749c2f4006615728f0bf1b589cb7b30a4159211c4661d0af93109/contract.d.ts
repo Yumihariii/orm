@@ -4,7 +4,7 @@ import type { CodecTypes } from '@prisma/orm-sqlite/target/codec-types';
 import type { ProfileHashBase, StorageHashBase } from '@prisma/orm-sqlite/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'374994e918ff79ba722051dfd010b32ffc5bf733151c8682c0bfa368bf9cfe94'>;
+  StorageHashBase<'9df4e74652f749c2f4006615728f0bf1b589cb7b30a4159211c4661d0af93109'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 type DefaultLiteralValue<CodecId extends string, _Encoded> = CodecId extends keyof CodecTypes
@@ -79,7 +79,7 @@ export type Contract = {
                   readonly nullable: true;
                   readonly default: {
                     readonly kind: 'literal';
-                    readonly value: DefaultLiteralValue<'sqlite/json@1', null>;
+                    readonly value: DefaultLiteralValue<'sqlite/json@1', 'null'>;
                   };
                 };
                 readonly name: {

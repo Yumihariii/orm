@@ -391,7 +391,7 @@ function rewriteDefault(target: string, codecId: string, value: JsonRecord): Jso
     return value;
   const literal = defaultValue['value'];
   if (literal === undefined) return value;
-  if (codecId === SQLITE_JSON_CODEC && literal !== null)
+  if (codecId === SQLITE_JSON_CODEC)
     return { ...value, default: { ...defaultValue, value: canonicalizeJson(literal) } };
   if (
     SQLITE_INTEGER_CODECS.has(codecId) &&

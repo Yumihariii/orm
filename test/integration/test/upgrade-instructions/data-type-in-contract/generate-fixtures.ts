@@ -608,7 +608,7 @@ const sqliteSettings: ContractSpec = {
         nativeType: 'text',
         dataType: 'sqlite/text',
         nullable: true,
-        literalDefault: { old: null, new: null, oldTs: 'null', newTs: 'null' },
+        literalDefault: { old: null, new: 'null', oldTs: 'null', newTs: "'null'" },
       },
       {
         name: 'name',

@@ -123,34 +123,29 @@ const contract: Contract<SqlStorage> = {
 
 const introspector = new SqliteControlAdapter(createSqliteBuiltinCodecLookup());
 
-const documentContract: Contract<SqlStorage> = {
-  ...contract,
-  storage: new SqlStorage({
-    storageHash: coreHash('data-type-verify-json'),
-    namespaces: {
-      [UNBOUND_NAMESPACE_ID]: sqliteCreateNamespace({
-        id: UNBOUND_NAMESPACE_ID,
-        entries: {
-          table: {
-            doc: {
-              columns: {
-                body: {
-                  dataType: 'sqlite/text',
-                  codecId: 'sqlite/json@1',
-                  nullable: false,
-                  default: literal('{"a":1,"b":[1,2]}'),
-                },
-              },
-              uniques: [],
-              indexes: [],
-              foreignKeys: [],
-            },
+function documentContractWith(body: StorageColumn): Contract<SqlStorage> {
+  return {
+    ...contract,
+    storage: new SqlStorage({
+      storageHash: coreHash('data-type-verify-json'),
+      namespaces: {
+        [UNBOUND_NAMESPACE_ID]: sqliteCreateNamespace({
+          id: UNBOUND_NAMESPACE_ID,
+          entries: {
+            table: { doc: { columns: { body }, uniques: [], indexes: [], foreignKeys: [] } },
           },
-        },
-      }),
-    },
-  }),
-};
+        }),
+      },
+    }),
+  };
+}
+
+const documentContract = documentContractWith({
+  dataType: 'sqlite/text',
+  codecId: 'sqlite/json@1',
+  nullable: false,
+  default: literal('{"a":1,"b":[1,2]}'),
+});
 
 async function verify(driver: ReturnType<typeof createMemoryDriver>) {
   const schema = await introspector.introspect(driver);
@@ -252,4 +247,25 @@ describe('verify on SQLite, for each data type', () => {
       }
     },
   );
+
+  it('verifies a JSON null document default against the stored text "null"', async () => {
+    const driver = createMemoryDriver();
+    try {
+      await driver.query(`CREATE TABLE "doc" ("body" TEXT DEFAULT 'null')`);
+      const result = familyInstance.verifySchema({
+        contract: documentContractWith({
+          dataType: 'sqlite/text',
+          codecId: 'sqlite/json@1',
+          nullable: true,
+          default: literal('null'),
+        }),
+        schema: await introspector.introspect(driver),
+        strict: true,
+        frameworkComponents,
+      });
+      expect(result.ok).toBe(true);
+    } finally {
+      await driver.close();
+    }
+  });
 });
