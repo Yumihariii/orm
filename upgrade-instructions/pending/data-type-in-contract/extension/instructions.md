@@ -76,8 +76,7 @@ changes:
       a codec, cast or authoring entry that names one fails assembly. The JSON and date-time codecs
       represent `sqlite/text`, the big integer codecs `sqlite/integer`. The date-time canonical form
       moves from `sqlite/datetime` to the codec `sqlite/datetime@1`, whose descriptor declares
-      `toCanonicalForm`. On SQLite a `BigInt` literal default is written `DEFAULT 42` instead of
-      `DEFAULT '42'`.
+      `toCanonicalForm`.
     detection:
       glob: "**/*.{ts,mts,cts}"
       matches:
@@ -123,16 +122,16 @@ changes:
 Commit your work first, so the script's changes can be reviewed and undone with git. Then run the script from the extension package's root:
 
 ```sh
-pnpm exec tsx <path-to-this-guide>/scripts/data-type-in-contract.ts
+node <path-to-this-guide>/scripts/data-type-in-contract.ts
 ```
 
-It reads and writes files only and needs no database. It rewrites every `*.json` file under the root that parses as a SQL contract in the old format (a column or `storage.types` entry that stores `nativeType`), skipping `node_modules`, `.git`, `dist` and `build`. That includes a test fixture of an old-format contract: if you keep such a fixture on purpose, restore it with git afterwards (`git restore <file>`), or keep it outside the project root.
+Node 24 or later runs the TypeScript script directly; it needs no `tsx`. It reads and writes files only and needs no database. It rewrites every `*.json` file under the root that parses as a SQL contract in the old format (a column or `storage.types` entry that stores `nativeType`), skipping `node_modules`, `.git`, `dist` and `build`. That includes a test fixture of an old-format contract: if you keep such a fixture on purpose, restore it with git afterwards (`git restore <file>`), or keep it outside the project root.
 
-If the script stops partway, for example on a full disk or when you press Ctrl-C, run it again: it finishes the upgrade. It prints the error and `the upgrade stopped partway, run the script again to finish it`, and exits 1. A file the script was writing at that moment is either unchanged or complete, and it removes its own temporary files (ending in `.data-type-in-contract-tmp`) on the next run.
+If the script stops on an error, for example on a full disk, it prints the error and `the upgrade stopped partway, run the script again to finish it`, and exits 1. After an error, Ctrl-C or a crash, run it again: it finishes the upgrade. A file the script was writing at that moment is either unchanged or complete, and it removes its own temporary files (ending in `.data-type-in-contract-tmp`) on the next run.
 
 Run your formatter afterwards. The script replaces text in `migration.ts` and `contract.d.ts`, so the import order in `migration.ts` and the line wrapping in `contract.d.ts` can differ from what a fresh emit and your formatter produce.
 
-A contract already in the new format is never changed, even when its stored hash does not match its content, so a project already in the new format is left unchanged. It prints `<file>: stored hash did not recompute; rehashed from content` for an old-format contract whose stored storage hash does not match its content, and rewrites it anyway. It changes no file and exits 1 when a column uses a codec it does not know (`<file>: unknown codec <id>; name its data type with --data-type <id>=<data type id>`) or when a renamed snapshot directory already exists with different content.
+When it finishes, it prints how many files it rewrote and how many snapshot directories it renamed, and each storage hash it replaced (`<old> -> <new>`). A contract already in the new format is never changed, even when its stored hash does not match its content, so a project already in the new format is left unchanged, and the script says that nothing changed. It prints `<file>: stored hash did not recompute; rehashed from content` for an old-format contract whose stored storage hash does not match its content, and rewrites it anyway. It changes no file and exits 1 when a column uses a codec it does not know (`<file>: unknown codec <id>; name its data type with --data-type <id>=<data type id>`) or when a renamed snapshot directory already exists with different content.
 
 The script knows every codec that Prisma and its own extensions ship. For each codec your extension owns, run the script with `--data-type <codec id>=<data type id>`, naming the data type that codec represents, for example `--data-type acme/shape@1=acme/shape`. Publish those lines in your release notes: your users pass the same options when they run the script on their projects. The option cannot change the data type of a codec the script already knows for a contract's target, but it can name the data type of a shared `sql/*` codec on a target the script does not know.
 
@@ -277,8 +276,6 @@ export class MyDatetimeDescriptor extends SqliteCodecDescriptor<void> {
   // codecId, traits, the JSON projection and the factory follow
 }
 ```
-
-Because both big integer codecs store digit text, a migration planned for a SQLite `BigInt` column with a literal default writes `DEFAULT 42` instead of `DEFAULT '42'`; tests that assert planned SQLite SQL change to match. A database created with `DEFAULT '42'` still verifies.
 
 ## `canonical-form-of-a-column`
 

@@ -47,20 +47,20 @@ Upgrade every extension that ships migrations (for example `@prisma/orm-extensio
 Commit your work first, so the script's changes can be reviewed and undone with git. Then run the script from the project root:
 
 ```sh
-pnpm exec tsx <path-to-this-guide>/scripts/data-type-in-contract.ts
+node <path-to-this-guide>/scripts/data-type-in-contract.ts
 ```
 
-It reads and writes files only and needs no database. It rewrites every `*.json` file under the root that parses as a SQL contract in the old format (a column or `storage.types` entry that stores `nativeType`), skipping `node_modules`, `.git`, `dist` and `build`. That includes a test fixture of an old-format contract: if you keep such a fixture on purpose, restore it with git afterwards (`git restore <file>`), or keep it outside the project root.
+Node 24 or later runs the TypeScript script directly; it needs no `tsx`. It reads and writes files only and needs no database. It rewrites every `*.json` file under the root that parses as a SQL contract in the old format (a column or `storage.types` entry that stores `nativeType`), skipping `node_modules`, `.git`, `dist` and `build`. That includes a test fixture of an old-format contract: if you keep such a fixture on purpose, restore it with git afterwards (`git restore <file>`), or keep it outside the project root.
 
-If the script stops partway, for example on a full disk or when you press Ctrl-C, run it again: it finishes the upgrade. It prints the error and `the upgrade stopped partway, run the script again to finish it`, and exits 1. A file the script was writing at that moment is either unchanged or complete, and it removes its own temporary files (ending in `.data-type-in-contract-tmp`) on the next run.
+If the script stops on an error, for example on a full disk, it prints the error and `the upgrade stopped partway, run the script again to finish it`, and exits 1. After an error, Ctrl-C or a crash, run it again: it finishes the upgrade. A file the script was writing at that moment is either unchanged or complete, and it removes its own temporary files (ending in `.data-type-in-contract-tmp`) on the next run.
 
 Run your formatter afterwards. The script replaces text in `migration.ts` and `contract.d.ts`, so the import order in `migration.ts` and the line wrapping in `contract.d.ts` can differ from what a fresh emit and your formatter produce.
 
-A contract already in the new format is never changed, even when its stored hash does not match its content, so a project already in the new format is left unchanged. It prints `<file>: stored hash did not recompute; rehashed from content` for an old-format contract whose stored storage hash does not match its content, and rewrites it anyway. It changes no file and exits 1 when a column uses a codec it does not know (`<file>: unknown codec <id>; name its data type with --data-type <id>=<data type id>`) or when a renamed snapshot directory already exists with different content.
+When it finishes, it prints how many files it rewrote and how many snapshot directories it renamed, and each storage hash it replaced (`<old> -> <new>`). A contract already in the new format is never changed, even when its stored hash does not match its content, so a project already in the new format is left unchanged, and the script says that nothing changed. It prints `<file>: stored hash did not recompute; rehashed from content` for an old-format contract whose stored storage hash does not match its content, and rewrites it anyway. It changes no file and exits 1 when a column uses a codec it does not know (`<file>: unknown codec <id>; name its data type with --data-type <id>=<data type id>`) or when a renamed snapshot directory already exists with different content.
 
 The script knows every codec that Prisma and its own extensions ship. For a codec from another extension, pass the line that extension publishes in its upgrade notes, once per codec, for example `--data-type acme/shape@1=acme/shape`. The option cannot change the data type of a codec the script already knows for a contract's target, but it can name the data type of a shared `sql/*` codec on a target the script does not know.
 
-On SQLite, the contract now stores a literal default of an `Int` or a `BigInt` column as digit text: an `Int` default that was the JSON number `42` becomes the text `"42"`, and a `BigInt` default was already text. A migration planned from now on writes a `BigInt` default as `DEFAULT 42` instead of `DEFAULT '42'`; an `Int` default is still written `DEFAULT 42`. A database created with `DEFAULT '42'` still verifies. Tests that assert the planned SQL change to match. The same holds for the members of an `enum` typed by an integer codec (`@@type("sqlite/integer@1")`, `@@type("sql/int@1")`): the script writes their stored values as digit text. The schema does not change: members are written as before, for example `Low = 1`.
+On SQLite, the contract now stores a literal default of an `Int` column as digit text, as it already stored a `BigInt` default: an `Int` default that was the JSON number `42` becomes the text `"42"`. The script makes this change. Planned SQL does not change (`DEFAULT 42`), and a database the previous release created still verifies. A `BigInt` default of 2^53 or less, which the previous release's check after `prisma db migrate` reported as missing, now passes. The same holds for the members of an `enum` typed by an integer codec (`@@type("sqlite/integer@1")`, `@@type("sql/int@1")`): the script writes their stored values as digit text. The schema does not change: members are written as before, for example `Low = 1`.
 
 ## `column-descriptors-drop-native-type`
 
@@ -103,8 +103,10 @@ A type written by hand for such a contract changes the same way: `readonly nativ
 The upgrade gives every contract a new storage hash. Each database's marker still holds the old hash, so until you sign it:
 
 - `prisma db migrate` refuses to run with `MIGRATION.MARKER_MISMATCH`;
-- the running application logs `CONTRACT.MARKER_MISMATCH` when it starts;
+- `prisma db verify` exits with code 4 and `CONTRACT.MARKER_MISMATCH`;
 - `prisma migration status` does not label the migrations applied before the upgrade as applied.
+
+The running application does not report the mismatch: it keeps answering queries and logs nothing, because the `postgres()` client has no logger for the marker check.
 
 Run `prisma db sign` against every database (development, staging, production) before you deploy the application built with the new contract:
 
