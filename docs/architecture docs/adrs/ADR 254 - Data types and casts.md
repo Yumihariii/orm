@@ -222,7 +222,7 @@ SQLite stores a JSON document as text, so its `json` tag yields a value of `sqli
 },
 ```
 
-An entry that names a type must sit under its tag's key, and an entry under a data type's id must name none; anything else fails assembly with `CONTRACT.DATA_TYPE_ENTRY_KEY_INVALID`. On SQLite a `Json` column given a plain string is refused by its codec, `sqlite/json@1`, with `PSL_INVALID_DEFAULT_LITERAL`, because a string is not the text of a document; a `String` column takes a `json` literal, because both are `sqlite/text`.
+An entry that names a type must sit under its tag's key, and an entry under a data type's id must name none; anything else fails assembly with `CONTRACT.DATA_TYPE_ENTRY_KEY_INVALID`. These two kinds of key are temporary: once every entry names the type or types it yields, its key is a free name, and `tagEntryKey` and this check go away. On SQLite a `Json` column given a plain string is refused by its codec, `sqlite/json@1`, with `PSL_INVALID_DEFAULT_LITERAL`, because a string is not the text of a document; a `String` column takes a `json` literal, because both are `sqlite/text`.
 
 Every tag names a data type. `sql` names `sql/expression`: its `parse` returns the text unchanged, because nothing in the framework reads SQL. Because `sql/expression` declares no casts and no type casts from it, a `sql` literal is admitted only where the receiving position is of that type, and no other literal is admitted there. `@default` is the one position that takes it beside the column's own type: it stores the text in the contract's expression form on any column.
 
