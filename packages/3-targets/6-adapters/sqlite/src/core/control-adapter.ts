@@ -440,10 +440,6 @@ export class SqliteControlAdapter implements SqlControlAdapter<'sqlite'> {
     return rows.length > 0;
   }
 
-  /**
-   * Appends a ledger entry for `space`. See the
-   * `SqlControlAdapter.writeLedgerEntry` contract.
-   */
   async withTransaction<T>(
     driver: SqlControlDriverInstance<'sqlite'>,
     fn: () => Promise<T>,
@@ -466,6 +462,9 @@ export class SqliteControlAdapter implements SqlControlAdapter<'sqlite'> {
     return result;
   }
 
+  /**
+   * Appends a ledger entry for `space`. See the `SqlControlAdapter.writeLedgerEntry` contract.
+   */
   async writeLedgerEntry(
     driver: SqlControlDriverInstance<'sqlite'>,
     space: string,

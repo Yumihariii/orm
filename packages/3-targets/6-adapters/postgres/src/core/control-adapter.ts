@@ -521,14 +521,6 @@ export class PostgresControlAdapter implements SqlControlAdapter<'postgres'> {
     return rows.length > 0;
   }
 
-  /**
-   * Appends a ledger entry for `space`. When the edge carries a
-   * destination contract snapshot, the content-addressed
-   * `prisma_contract.contract` store is populated first (keyed by the
-   * destination hash, DO NOTHING on revisit) so a reader never sees a
-   * ledger row whose stored destination contract is missing. See the
-   * `SqlControlAdapter.writeLedgerEntry` contract.
-   */
   async withTransaction<T>(
     driver: SqlControlDriverInstance<'postgres'>,
     fn: () => Promise<T>,
@@ -551,6 +543,9 @@ export class PostgresControlAdapter implements SqlControlAdapter<'postgres'> {
     return result;
   }
 
+  /**
+   * Appends a ledger entry for `space`. When the edge carries a destination contract snapshot, the content-addressed `prisma_contract.contract` store is populated first (keyed by the destination hash, DO NOTHING on revisit) so a reader never sees a ledger row whose stored destination contract is missing. See the `SqlControlAdapter.writeLedgerEntry` contract.
+   */
   async writeLedgerEntry(
     driver: SqlControlDriverInstance<'postgres'>,
     space: string,
