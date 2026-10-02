@@ -210,19 +210,18 @@ describe('enrichContract', () => {
     const operationTypes = {
       import: { package: '@ext/acme', named: 'OperationTypes', alias: 'AcmeOps' },
     };
-    const extension = makeExtension({
-      types: {
-        codecTypes: {
-          import: { package: '@ext/acme', named: 'CodecTypes', alias: 'AcmeTypes' },
-        },
-        queryOperationTypes,
-        aggregateDescriptors: [],
-        operationTypes,
-        storage: [
-          { typeId: 'acme/shape@1', familyId: 'sql', targetId: 'postgres', nativeType: 'shape' },
-        ],
-      } as TargetBoundComponentDescriptor<'sql', 'postgres'>['types'],
-    });
+    const typesOfAnOlderPack = {
+      codecTypes: {
+        import: { package: '@ext/acme', named: 'CodecTypes', alias: 'AcmeTypes' },
+      },
+      queryOperationTypes,
+      aggregateDescriptors: [],
+      operationTypes,
+      storage: [
+        { typeId: 'acme/shape@1', familyId: 'sql', targetId: 'postgres', nativeType: 'shape' },
+      ],
+    };
+    const extension = makeExtension({ types: typesOfAnOlderPack });
 
     const result = enrichContract(makeIR(), [extension]);
 
