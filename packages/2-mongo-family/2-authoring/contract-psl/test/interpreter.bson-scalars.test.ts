@@ -1,9 +1,7 @@
-import type { CodecLookup } from '@internal/framework-components/codec';
+import type { CodecLookup, CodecLookupWithDescriptors } from '@internal/framework-components/codec';
 import { UNBOUND_NAMESPACE_ID } from '@internal/framework-components/ir';
-import { buildSymbolTable, EMPTY_DATA_TYPES } from '@internal/psl-parser';
-import { parse } from '@internal/psl-parser/syntax';
 import { describe, expect, it } from 'vitest';
-import { interpretPslDocumentToMongoContract } from '../src/interpreter';
+import { interpretMongoContract } from './interpreter-test-helpers';
 
 const scalarTypeCodecIds: ReadonlyMap<string, string> = new Map([
   ['ObjectId', 'mongo/objectId@1'],
@@ -21,7 +19,7 @@ const targetTypes: Record<string, readonly string[]> = {
   'mongo/json@1': [],
 };
 
-const codecLookup: CodecLookup = {
+const codecLookup: CodecLookupWithDescriptors = {
   get(id: string) {
     if (!targetTypes[id]) return undefined;
     return {
@@ -34,6 +32,7 @@ const codecLookup: CodecLookup = {
   },
   targetTypesFor: (id: string) => targetTypes[id],
   renderOutputTypeFor: () => undefined,
+  descriptorFor: () => undefined,
 };
 
 const SCHEMA = `model Post {
@@ -47,20 +46,15 @@ const SCHEMA = `model Post {
 `;
 
 function interpretPost() {
-  const { document, sources } = parse(SCHEMA, 'bson-scalars.prisma');
-  const { symbolTable } = buildSymbolTable({
-    documents: [document],
-    sources,
-  });
-  const result = interpretPslDocumentToMongoContract({
-    documents: [document],
-    symbolTable,
-    sources,
-    scalarTypeCodecIds,
-    controlMutationDefaults: { defaultFunctionRegistry: new Map() },
-    dataTypes: EMPTY_DATA_TYPES,
-    codecLookup,
-  });
+  const result = interpretMongoContract(
+    SCHEMA,
+    {
+      scalarTypeCodecIds,
+      controlMutationDefaults: { defaultFunctionRegistry: new Map() },
+      codecLookup,
+    },
+    'bson-scalars.prisma',
+  );
   if (!result.ok) throw new Error(JSON.stringify(result.failure));
   return result.value;
 }

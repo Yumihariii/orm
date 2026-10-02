@@ -6,7 +6,6 @@ import type {
   AuthoringContributions,
   DataTypeSupport,
 } from '@internal/framework-components/authoring';
-import { checkUncomposedNamespace } from '@internal/framework-components/authoring';
 import type { CodecLookupWithDescriptors } from '@internal/framework-components/codec';
 import type { CapabilityMatrix } from '@internal/framework-components/components';
 import type {
@@ -15,9 +14,11 @@ import type {
 } from '@internal/framework-components/control';
 import type {
   Binder,
+  BlockSymbol,
   DescribeUnsupportedAttribute,
   FieldSymbol,
   ModelSymbol,
+  NamedTypeSymbol,
   ResolvedAttribute,
   SymbolTable,
 } from '@internal/psl-parser';
@@ -26,7 +27,6 @@ import {
   type PslDiagnosticCollector,
   typeReferenceNode,
 } from '@internal/psl-parser';
-import { uncomposedNamespaceDiagnostic } from '@internal/psl-parser/interpret';
 import type { PslSources } from '@internal/psl-parser/syntax';
 import {
   type AuthoredColumnDefault,
@@ -82,6 +82,7 @@ function lowerEnumDefaultForField(input: {
       symbols: input.symbolTable,
       model,
       field,
+      binder: input.binder,
       controlMutationDefaults: { defaultFunctionRegistry: input.defaultFunctionRegistry },
       dataTypes: input.dataTypes,
     }),
@@ -151,6 +152,7 @@ export type ResolvedField = {
   readonly noCheck?: readonly ('membership' | 'elementNotNull')[];
   readonly elementNullable?: true;
   readonly valueObjectTypeName?: string;
+  readonly enumTypeHandle?: EnumTypeHandle;
 };
 
 /**
@@ -175,13 +177,11 @@ export interface CollectResolvedFieldsInput {
   readonly model: ModelSymbol;
   readonly physicalNames: ReadonlyMap<ModelSymbol | FieldSymbol, string>;
   readonly symbolTable: SymbolTable;
-  readonly enumTypeDescriptors: Map<string, ColumnDescriptor>;
-  readonly namedTypeDescriptors: Map<string, ColumnDescriptor>;
+  readonly enumTypeDescriptors: ReadonlyMap<BlockSymbol, ColumnDescriptor>;
+  readonly namedTypeDescriptors: ReadonlyMap<NamedTypeSymbol, ColumnDescriptor>;
   /** The value objects the composite types declare, by name. */
   readonly valueObjectTypes: ValueObjectTypes;
-  readonly composedExtensions: Set<string>;
   readonly authoringContributions: AuthoringContributions | undefined;
-  readonly familyId: string;
   readonly targetId: string;
   readonly defaultFunctionRegistry: ControlMutationDefaultRegistry;
   readonly dataTypes: DataTypeSupport;
@@ -190,7 +190,7 @@ export interface CollectResolvedFieldsInput {
   readonly sources: PslSources;
   readonly binder: Binder;
   readonly scalarColumnDescriptors: ReadonlyMap<string, ColumnDescriptor>;
-  readonly enumHandles?: ReadonlyMap<string, EnumTypeHandle>;
+  readonly enumHandles: ReadonlyMap<BlockSymbol, EnumTypeHandle>;
   readonly capabilities: CapabilityMatrix;
   /** The model's resolved namespace id — forwarded to `resolveFieldTypeDescriptor` for entity-ref value-set scoping. */
   readonly namespaceId?: string;
@@ -238,36 +238,12 @@ const REMOVED_ATTRIBUTE_RULES: ReadonlyMap<string, RemovedAttributeRule> = new M
   }
 }
 
-export function describeUnsupportedSqlAttribute(input: {
-  readonly composedExtensions: ReadonlySet<string>;
-  readonly authoringContributions: AuthoringContributions | undefined;
-  readonly sources: PslSources;
-  readonly familyId: string | undefined;
-  readonly targetId: string | undefined;
-}): DescribeUnsupportedAttribute {
-  const namespaceContext = {
-    ...ifDefined('familyId', input.familyId),
-    ...ifDefined('targetId', input.targetId),
-    authoringContributions: input.authoringContributions,
-  };
+export function describeUnsupportedSqlAttribute(sources: PslSources): DescribeUnsupportedAttribute {
   return ({ attribute, level, owner, field }) => {
     // A composite type takes no attributes at all; `buildValueObjectNodes` refuses each one once.
     if (owner.kind === 'compositeType') return undefined;
     if (level === 'model') {
-      const source = diagnosticSource(input.sources, owner.node.syntax);
-      const uncomposedNamespace = checkUncomposedNamespace(
-        attribute.name,
-        input.composedExtensions,
-        namespaceContext,
-      );
-      if (uncomposedNamespace) {
-        return uncomposedNamespaceDiagnostic({
-          subjectLabel: `Attribute "@@${attribute.name}"`,
-          namespace: uncomposedNamespace,
-          source,
-          span: attribute.span,
-        });
-      }
+      const source = diagnosticSource(sources, owner.node.syntax);
       return {
         code: 'PSL_UNSUPPORTED_MODEL_ATTRIBUTE',
         message: `Model "${owner.name}" uses unsupported attribute "@@${attribute.name}"`,
@@ -276,7 +252,7 @@ export function describeUnsupportedSqlAttribute(input: {
     }
 
     if (field === undefined) return undefined;
-    const source = diagnosticSource(input.sources, field.node.syntax);
+    const source = diagnosticSource(sources, field.node.syntax);
 
     if (attribute.name.startsWith('db.')) {
       return {
@@ -284,20 +260,6 @@ export function describeUnsupportedSqlAttribute(input: {
         message: formatDbAttributeMigrationMessage(attribute),
         ...source.at(attribute.span),
       };
-    }
-
-    const uncomposedNamespace = checkUncomposedNamespace(
-      attribute.name,
-      input.composedExtensions,
-      namespaceContext,
-    );
-    if (uncomposedNamespace) {
-      return uncomposedNamespaceDiagnostic({
-        subjectLabel: `Attribute "@${attribute.name}"`,
-        namespace: uncomposedNamespace,
-        source,
-        span: attribute.span,
-      });
     }
 
     const baseMessage = `Field "${owner.name}.${field.name}" uses unsupported attribute "@${attribute.name}"`;
@@ -441,10 +403,8 @@ export function collectResolvedFields(input: CollectResolvedFieldsInput): Resolv
     enumTypeDescriptors,
     namedTypeDescriptors,
     valueObjectTypes,
-    composedExtensions,
     authoringContributions,
     binder,
-    familyId,
     targetId,
     defaultFunctionRegistry,
     dataTypes,
@@ -519,14 +479,9 @@ export function collectResolvedFields(input: CollectResolvedFieldsInput): Resolv
     let presetContributions: FieldPresetContributions | undefined;
     const resolveInput = {
       field,
-      binder,
+      resolution: fieldTypeResolution,
       enumTypeDescriptors,
       namedTypeDescriptors,
-      scalarColumnDescriptors,
-      authoringContributions,
-      composedExtensions,
-      familyId,
-      targetId,
       diagnostics,
       sources,
       entityLabel: `Field "${model.name}.${field.name}"`,
@@ -561,13 +516,6 @@ export function collectResolvedFields(input: CollectResolvedFieldsInput): Resolv
       }
       const resolved = resolveFieldTypeDescriptor(resolveInput);
       if (!resolved.ok) {
-        if (!resolved.alreadyReported && fieldTypeResolution?.kind !== 'unresolved') {
-          diagnostics.push({
-            code: 'PSL_UNSUPPORTED_FIELD_TYPE',
-            message: `Field "${model.name}.${field.name}" type "${field.typeName}" is not supported in SQL PSL provider v1`,
-            ...source.at(field.span),
-          });
-        }
         continue;
       }
       // Field presets are complete declarations — they carry their own codec
@@ -584,13 +532,6 @@ export function collectResolvedFields(input: CollectResolvedFieldsInput): Resolv
     } else {
       const resolved = resolveFieldTypeDescriptor(resolveInput);
       if (!resolved.ok) {
-        if (!resolved.alreadyReported && fieldTypeResolution?.kind !== 'unresolved') {
-          diagnostics.push({
-            code: 'PSL_UNSUPPORTED_FIELD_TYPE',
-            message: `Field "${model.name}.${field.name}" type "${field.typeName}" is not supported in SQL PSL provider v1`,
-            ...source.at(field.span),
-          });
-        }
         continue;
       }
       descriptor = resolved.descriptor;
@@ -623,7 +564,10 @@ export function collectResolvedFields(input: CollectResolvedFieldsInput): Resolv
       });
       continue;
     }
-    const enumHandle = enumHandles?.get(field.typeName);
+    const enumHandle =
+      fieldTypeResolution?.kind === 'block'
+        ? enumHandles.get(fieldTypeResolution.symbol)
+        : undefined;
     const loweredDefault: LoweredFieldDefault = defaultAttribute
       ? enumHandle
         ? lowerEnumDefaultForField({
@@ -769,6 +713,7 @@ export function collectResolvedFields(input: CollectResolvedFieldsInput): Resolv
       ...ifDefined('noCheck', noCheckKinds),
       ...ifDefined('elementNullable', field.elementOptional ? (true as const) : undefined),
       ...ifDefined('valueObjectTypeName', valueObjectName),
+      ...ifDefined('enumTypeHandle', enumHandle),
     });
   }
 

@@ -12,7 +12,7 @@
  */
 
 import type { Contract } from '@internal/contract/types';
-import { createDataTypeLookup } from '@internal/framework-components/codec';
+import { createDataTypeLookup, emptyCodecLookup } from '@internal/framework-components/codec';
 import { assembleAuthoringContributions } from '@internal/framework-components/control';
 import {
   buildSymbolTable,
@@ -20,9 +20,16 @@ import {
   EMPTY_DATA_TYPES,
   interpretExtensionBlocks,
 } from '@internal/psl-parser';
+import { withSeedDiagnostics } from '@internal/psl-parser/interpret';
 import { parse } from '@internal/psl-parser/syntax';
+import { bindPslSchema } from '@internal/psl-parser/test';
 import type { SqlStorage } from '@internal/sql-contract/types';
 import { interpretPslDocumentToSqlContract } from '@internal/sql-contract-psl';
+import {
+  describeUnsupportedSqlAttribute,
+  sqlAttributeSpecs,
+} from '@internal/sql-contract-psl/attribute-specs';
+import { sqlContextInput } from '@internal/sql-contract-psl/test';
 import { postgresDataTypes } from '@internal/target-postgres/data-types';
 import { describe, expect, it } from 'vitest';
 import {
@@ -53,11 +60,14 @@ function blockResolutionBinder(
   return createBinder({
     sources,
     symbolTable,
-    typeConstructors: {},
-    attributeSpecs: { model: {}, field: {} },
-    controlMutationDefaults: { defaultFunctionRegistry: new Map() },
-    dataTypes: EMPTY_DATA_TYPES,
-    pslBlockDescriptors: assembled.pslBlockDescriptors,
+    context: {
+      authoringContributions: {
+        ...assembleAuthoringContributions([]),
+        pslBlockDescriptors: assembled.pslBlockDescriptors,
+      },
+      controlMutationDefaults: { defaultFunctionRegistry: new Map() },
+      dataTypes: EMPTY_DATA_TYPES,
+    },
   }).binder;
 }
 
@@ -76,6 +86,13 @@ const scalarTypeDescriptors = new Map<string, { codecId: string; nativeType: str
   ['Int', { codecId: 'pg/int4@1', nativeType: 'int4' }],
 ]);
 
+const scalarTypeConstructors = Object.fromEntries(
+  [...scalarTypeDescriptors].map(([name, output]) => [
+    name,
+    { kind: 'typeConstructor' as const, output },
+  ]),
+);
+
 function interpretWithSymbolDiagnostics(source: string) {
   const { document, sources } = parse(source, 'psl-rls-operations.test.psl');
   const { symbolTable, diagnostics: collectionDiagnostics } = buildSymbolTable({
@@ -91,18 +108,36 @@ function interpretWithSymbolDiagnostics(source: string) {
       binder: blockResolutionBinder(symbolTable, sources),
     }).diagnostics,
   ];
-  const result = interpretPslDocumentToSqlContract({
-    documents: [document],
-    dataTypes: { entries: assembled.dataTypes, lookup: postgresDataTypeLookup },
-    symbolTable,
-    sources,
-    target: postgresTarget,
-    scalarColumnDescriptors: scalarTypeDescriptors,
-    authoringContributions: assembled,
-    composedExtensionContracts: new Map(),
-    createNamespace: postgresCreateNamespace,
-    capabilities: { sql: { scalarList: true } },
+  const bound = bindPslSchema(source, {
+    sourceId: 'psl-rls-operations.test.psl',
+    context: {
+      composedExtensions: [],
+      composedExtensionContracts: new Map(),
+      authoringContributions: {
+        ...assembled,
+        type: { ...scalarTypeConstructors, ...assembled.type },
+        attributeSpecs: sqlAttributeSpecs,
+      },
+      pslDiagnostics: { describeUnsupportedAttribute: describeUnsupportedSqlAttribute },
+      codecLookup: { ...emptyCodecLookup, descriptorFor: () => undefined },
+      controlMutationDefaults: { defaultFunctionRegistry: new Map(), generatorDescriptors: [] },
+      dataTypes: { entries: assembled.dataTypes, lookup: postgresDataTypeLookup },
+      resolvedInputs: [],
+      capabilities: { sql: { scalarList: true } },
+    },
   });
+  const result = withSeedDiagnostics(
+    interpretPslDocumentToSqlContract({
+      documents: bound.documents,
+      sources: bound.sources,
+      symbolTable: bound.symbolTable,
+      binder: bound.binder,
+      ...sqlContextInput(bound.context),
+      target: postgresTarget,
+      createNamespace: postgresCreateNamespace,
+    }),
+    bound.seedDiagnostics,
+  );
   return { result, symbolTableDiagnostics: diagnostics };
 }
 

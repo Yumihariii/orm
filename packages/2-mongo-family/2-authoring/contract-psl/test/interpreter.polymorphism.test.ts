@@ -1,6 +1,6 @@
 import type { Contract } from '@internal/contract/types';
 import { crossRef } from '@internal/contract/types';
-import type { CodecLookup } from '@internal/framework-components/codec';
+import type { CodecLookup, CodecLookupWithDescriptors } from '@internal/framework-components/codec';
 import { UNBOUND_NAMESPACE_ID } from '@internal/framework-components/ir';
 import { MongoIndex } from '@internal/mongo-contract';
 
@@ -8,14 +8,11 @@ function modelsOf(ir: Contract): Record<string, unknown> {
   return ir.domain.namespaces[UNBOUND_NAMESPACE_ID]!.models;
 }
 
-import { buildSymbolTable, EMPTY_DATA_TYPES, type SymbolTable } from '@internal/psl-parser';
-import type { DocumentAst, PslSources } from '@internal/psl-parser/syntax';
-import { parse } from '@internal/psl-parser/syntax';
 import { describe, expect, it } from 'vitest';
-import { interpretPslDocumentToMongoContract } from '../src/interpreter';
 import {
   expectInvalidAttributeSyntax,
   expectUnresolvedReference,
+  interpretMongoContract,
 } from './interpreter-test-helpers';
 
 const mongoScalarTypeDescriptors: ReadonlyMap<string, string> = new Map([
@@ -36,7 +33,7 @@ const mongoTargetTypes: Record<string, readonly string[]> = {
   'mongo/double@1': ['double'],
 };
 
-const mongoCodecLookup: CodecLookup = {
+const mongoCodecLookup: CodecLookupWithDescriptors = {
   get(id: string) {
     const targetTypes = mongoTargetTypes[id];
     if (!targetTypes) return undefined;
@@ -50,6 +47,7 @@ const mongoCodecLookup: CodecLookup = {
   },
   targetTypesFor: (id: string) => mongoTargetTypes[id],
   renderOutputTypeFor: () => undefined,
+  descriptorFor: () => undefined,
 };
 
 function mongoCollectionsOf(ir: { readonly storage: unknown }): Record<string, unknown> {
@@ -59,27 +57,18 @@ function mongoCollectionsOf(ir: { readonly storage: unknown }): Record<string, u
   return storage.namespaces[UNBOUND_NAMESPACE_ID]!.entries.collection;
 }
 
-function buildSymbolTableInput(schema: string): {
-  documents: readonly DocumentAst[];
-  symbolTable: SymbolTable;
-  sources: PslSources;
-} {
-  const { document, sources } = parse(schema, 'test.prisma');
-  const { symbolTable } = buildSymbolTable({
-    documents: [document],
-    sources,
-  });
-  return { documents: [document], symbolTable, sources };
-}
-
 function interpret(schema: string) {
-  return interpretPslDocumentToMongoContract({
-    ...buildSymbolTableInput(schema),
-    scalarTypeCodecIds: mongoScalarTypeDescriptors,
-    controlMutationDefaults: { defaultFunctionRegistry: new Map() },
-    dataTypes: EMPTY_DATA_TYPES,
-    codecLookup: mongoCodecLookup,
-  });
+  return interpretMongoContract(
+    schema,
+    {
+      scalarTypeCodecIds: mongoScalarTypeDescriptors,
+      controlMutationDefaults: {
+        defaultFunctionRegistry: new Map(),
+      },
+      codecLookup: mongoCodecLookup,
+    },
+    'test.prisma',
+  );
 }
 
 function interpretOk(schema: string) {
@@ -434,6 +423,51 @@ namespace scoped {
           }),
         ]),
       );
+    });
+
+    it('diagnoses a discriminator field typed by a user composite type named String', () => {
+      const result = interpret(`
+        type String {
+          value Int32
+        }
+
+        model Task {
+          id   ObjectId @id @map("_id")
+          type String
+
+          @@discriminator(type)
+        }
+
+        model Bug {
+          severity Int32
+
+          @@base(Task, "bug")
+        }
+      `);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.failure.diagnostics).toEqual([
+        {
+          code: 'PSL_INVALID_ATTRIBUTE_ARGUMENT',
+          message:
+            'Discriminator field "type" on model "Task" must be of type String, but is "String"',
+          sourceId: 'test.prisma',
+          span: {
+            start: { line: 10, column: 11, offset: 150 },
+            end: { line: 10, column: 32, offset: 171 },
+          },
+        },
+        {
+          code: 'PSL_ORPHANED_BASE',
+          message: 'Model "Bug" declares @@base(Task, ...) but "Task" has no @@discriminator',
+          sourceId: 'test.prisma',
+          span: {
+            start: { line: 16, column: 11, offset: 239 },
+            end: { line: 16, column: 30, offset: 258 },
+          },
+        },
+      ]);
     });
 
     it('diagnoses model with both @@discriminator and @@base', () => {

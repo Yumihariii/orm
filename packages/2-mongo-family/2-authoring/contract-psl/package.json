@@ -56,6 +56,10 @@
       "types": "./dist/exports/provider.d.mts",
       "import": "./dist/exports/provider.mjs"
     },
+    "./test": {
+      "types": "./dist/exports/test.d.mts",
+      "import": "./dist/exports/test.mjs"
+    },
     "./package.json": {
       "types": "./package.json",
       "import": "./package.json"

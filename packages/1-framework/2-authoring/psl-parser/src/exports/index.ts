@@ -102,15 +102,19 @@ export type {
 export type {
   AttributeSymbol,
   Binder,
+  BinderContext,
   BinderResult,
   BoundSpec,
-  CreateBinderOptions,
+  CreateBinderInput,
+  DescribeUnresolvedType,
   DescribeUnsupportedAttribute,
   PslSymbol,
   Resolution,
+  UnresolvedTypeReference,
   UnsupportedAttribute,
 } from '../binder';
 export {
+  contributedTypeOf,
   createBinder,
   PSL_UNRESOLVED_REFERENCE,
   typeReferenceNode,
@@ -140,6 +144,8 @@ export type {
 export type {
   ContributedMember,
   ContributedNamespaceSymbol,
+  ContributedTypeDescriptor,
+  ContributedTypeNamespace,
   ContributedTypeScope,
   ContributedTypeSymbol,
 } from '../contributed-type-scope';

@@ -14,6 +14,7 @@ import {
   EMPTY_DATA_TYPES,
   findBlockDescriptor,
   type SymbolTable,
+  typeReferenceNode,
 } from '@internal/psl-parser';
 import type {
   FieldDeclarationAst,
@@ -92,7 +93,9 @@ export function attributeSpecResolver(
         controlMutationDefaults: source.controlMutationDefaults,
         dataTypes: source.dataTypes ?? EMPTY_DATA_TYPES,
       };
-      return (name) => specs.field[name]?.({ ...specContext, field });
+      const node = typeReferenceNode(field);
+      const typeResolution = node === undefined ? undefined : source.binder.symbolForNode(node);
+      return (name) => specs.field[name]?.({ ...specContext, field, typeResolution });
     }
   }
 }

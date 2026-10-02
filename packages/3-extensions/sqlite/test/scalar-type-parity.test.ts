@@ -1,14 +1,12 @@
 import sqliteAdapter from '@internal/adapter-sqlite/control';
 import sqliteDriver from '@internal/driver-sqlite/control';
 import sql from '@internal/family-sql/control';
-import {
-  collectScalarTypeConstructors,
-  type ScalarTypeConstructorOutput,
-} from '@internal/framework-components/authoring';
+import { collectScalarTypeConstructors } from '@internal/framework-components/authoring';
 import { createControlStack } from '@internal/framework-components/control';
-import { buildSymbolTable } from '@internal/psl-parser';
-import { parse } from '@internal/psl-parser/syntax';
+import { withSeedDiagnostics } from '@internal/psl-parser/interpret';
+import { bindPslSchema, contractSourceContextFromControlStack } from '@internal/psl-parser/test';
 import { interpretPslDocumentToSqlContract } from '@internal/sql-contract-psl';
+import { sqlContextInput } from '@internal/sql-contract-psl/test';
 import sqlite, { sqliteCreateNamespace } from '@internal/target-sqlite/control';
 import sqlitePackRef from '@internal/target-sqlite/pack';
 import { describe, expect, it } from 'vitest';
@@ -33,26 +31,23 @@ const REPRESENTATIVE_SCHEMA = `model sample {
 }
 `;
 
-function emit(scalarColumnDescriptors: ReadonlyMap<string, ScalarTypeConstructorOutput>) {
-  const { document, sources } = parse(REPRESENTATIVE_SCHEMA, 'scalar-type-parity.test.psl');
-  const { symbolTable } = buildSymbolTable({
-    documents: [document],
-    sources,
+function emit() {
+  const bound = bindPslSchema(REPRESENTATIVE_SCHEMA, {
+    sourceId: 'scalar-type-parity.test.psl',
+    context: contractSourceContextFromControlStack(stack),
   });
-  return interpretPslDocumentToSqlContract({
-    documents: [document],
-    dataTypes: stack.dataTypes,
-    symbolTable,
-    sources,
-    target: sqlitePackRef,
-    scalarColumnDescriptors,
-    authoringContributions: stack.authoringContributions,
-    controlMutationDefaults: stack.controlMutationDefaults,
-    composedExtensionContracts: new Map(),
-    createNamespace: sqliteCreateNamespace,
-    codecLookup: stack.codecLookup,
-    capabilities: stack.capabilities,
-  });
+  return withSeedDiagnostics(
+    interpretPslDocumentToSqlContract({
+      documents: bound.documents,
+      sources: bound.sources,
+      symbolTable: bound.symbolTable,
+      binder: bound.binder,
+      ...sqlContextInput(bound.context),
+      target: sqlitePackRef,
+      createNamespace: sqliteCreateNamespace,
+    }),
+    bound.seedDiagnostics,
+  );
 }
 
 // The legacy scalar-type map channel (name-to-codecId, retired in TML-2985) is gone; the pinned literals
@@ -90,7 +85,7 @@ describe('sqlite scalar types derived from the unified namespace', () => {
   });
 
   it('emits a contract whose columns pin the namespace-derived {codecId, nativeType}', () => {
-    const result = emit(collectScalarTypeConstructors(stack.authoringContributions.type));
+    const result = emit();
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;

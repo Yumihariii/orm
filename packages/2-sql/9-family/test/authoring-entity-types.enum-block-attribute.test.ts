@@ -1,3 +1,4 @@
+import { assembleAuthoringContributions } from '@internal/framework-components/control';
 import {
   buildSymbolTable,
   createBinder,
@@ -14,11 +15,14 @@ function build(source: string) {
   const { binder } = createBinder({
     sources,
     symbolTable: result.symbolTable,
-    typeConstructors: {},
-    attributeSpecs: { model: {}, field: {} },
-    controlMutationDefaults: { defaultFunctionRegistry: new Map() },
-    dataTypes: EMPTY_DATA_TYPES,
-    pslBlockDescriptors: sqlFamilyPslBlockDescriptors,
+    context: {
+      authoringContributions: {
+        ...assembleAuthoringContributions([]),
+        pslBlockDescriptors: sqlFamilyPslBlockDescriptors,
+      },
+      controlMutationDefaults: { defaultFunctionRegistry: new Map() },
+      dataTypes: EMPTY_DATA_TYPES,
+    },
   });
   const { parsedBlocks, diagnostics: blockDiagnostics } = interpretExtensionBlocks({
     symbolTable: result.symbolTable,

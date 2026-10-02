@@ -7,7 +7,13 @@ import {
   assembleAuthoringContributions,
   assembleControlMutationDefaults,
 } from '@internal/framework-components/control';
-import { fieldAttribute } from '@internal/psl-parser';
+import {
+  buildSymbolTable,
+  createBinder,
+  type DescribeUnsupportedAttribute,
+  diagnosticSource,
+  fieldAttribute,
+} from '@internal/psl-parser';
 import type { PslInterpretCapable } from '@internal/psl-parser/interpret';
 import { parse } from '@internal/psl-parser/syntax';
 import { notOk, ok } from '@internal/utils/result';
@@ -45,7 +51,21 @@ const bothInputs = await resolveSchemaInputs(
   () => directive,
 );
 
-const interpretContext = { composedExtensions: [] } as unknown as ContractSourceContext;
+const interpretContext = {
+  composedExtensions: [],
+  authoringContributions: {
+    type: {
+      Int: { kind: 'typeConstructor', output: { codecId: 'test/Int@1', nativeType: 'Int' } },
+    },
+    field: {},
+    entityTypes: {},
+    pslBlockDescriptors: {},
+    modelAttributes: {},
+    attributeSpecs: { model: {}, field: {} },
+    dataTypes: {},
+  },
+  controlMutationDefaults: { defaultFunctionRegistry: new Map(), generatorDescriptors: [] },
+} as unknown as ContractSourceContext;
 const controlStack = {
   scalarTypes: ['Int'],
   pslBlockDescriptors: {},
@@ -66,7 +86,35 @@ const controlStack = {
   controlMutationDefaults: assembleControlMutationDefaults([]),
 };
 
-function interpretationDouble(interpret: PslInterpretCapable['interpret']): {
+function describeUnsupportedTestAttribute(
+  sources: Parameters<typeof diagnosticSource>[0],
+): DescribeUnsupportedAttribute {
+  return ({ attribute, level, owner, field }) => {
+    if (level === 'model') {
+      return {
+        code: 'PSL_UNSUPPORTED_MODEL_ATTRIBUTE',
+        message: `Model "${owner.name}" uses unsupported attribute "@@${attribute.name}"`,
+        ...diagnosticSource(sources, owner.node.syntax).at(attribute.span),
+      };
+    }
+    if (field === undefined) return undefined;
+    return {
+      code: 'PSL_UNSUPPORTED_FIELD_ATTRIBUTE',
+      message: `Field "${owner.name}.${field.name}" uses unsupported attribute "@${attribute.name}"`,
+      ...diagnosticSource(sources, field.node.syntax).at(attribute.span),
+    };
+  };
+}
+
+const interpretContextWithUnsupportedAttribute = {
+  ...interpretContext,
+  pslDiagnostics: { describeUnsupportedAttribute: describeUnsupportedTestAttribute },
+} as unknown as ContractSourceContext;
+
+function interpretationDouble(
+  interpret: PslInterpretCapable['interpret'],
+  context: ContractSourceContext = interpretContext,
+): {
   readonly interpretation: ProjectInterpretation;
   readonly spy: ReturnType<typeof vi.fn<PslInterpretCapable['interpret']>>;
 } {
@@ -76,7 +124,7 @@ function interpretationDouble(interpret: PslInterpretCapable['interpret']): {
     load: async () => ok({} as never),
     interpret: spy,
   } as unknown as PslInterpretCapable;
-  return { interpretation: { source, context: interpretContext }, spy };
+  return { interpretation: { source, context }, spy };
 }
 
 function projectWithSnapshots(
@@ -103,18 +151,13 @@ function projectWithSnapshots(
 }
 
 describe('ProjectArtifacts binder', () => {
-  it('preserves contributed identity across edits and replaces it with the configuration', () => {
+  it('rebuilds the binder on edits and takes contributed types from the configuration', () => {
     const first = projectWithSnapshots();
-    const snapshot = first.set(schemaUri, cleanSource);
+    first.set(schemaUri, cleanSource);
     const initial = first.project.binder();
-    const contributed = initial.scopeAt(snapshot.parse().document.syntax).lookup('Int');
-    const edited = first.set(schemaUri, siblingSource);
+    first.set(schemaUri, siblingSource);
     first.project.documentChanged(schemaUri);
-    const refreshed = first.project.binder();
-    expect(refreshed).not.toBe(initial);
-    expect(refreshed.scopeAt(edited.parse().document.syntax).lookup('Int')?.symbol).toBe(
-      contributed?.symbol,
-    );
+    expect(first.project.binder()).not.toBe(initial);
     const next = projectWithSnapshots(undefined, false, {
       ...controlStack,
       authoringContributions: assembleAuthoringContributions([
@@ -130,8 +173,11 @@ describe('ProjectArtifacts binder', () => {
     });
     const nextSnapshot = next.set(schemaUri, cleanSource);
     expect(
-      next.project.binder().scopeAt(nextSnapshot.parse().document.syntax).lookup('Int')?.symbol,
-    ).not.toBe(contributed?.symbol);
+      next.project.binder().scopeAt(nextSnapshot.parse().document.syntax).lookup('Int'),
+    ).toMatchObject({
+      kind: 'contributedType',
+      symbol: { descriptor: { output: { codecId: 'other', nativeType: 'bigint' } } },
+    });
   });
 
   it('shares a binder for a snapshot and replaces it on edits, membership and close', () => {
@@ -158,7 +204,7 @@ describe('ProjectArtifacts binder', () => {
     expect(project.binder()).not.toBe(third);
   });
 
-  it('uses binder diagnostics only when no interpreter is available', () => {
+  it('reports binder diagnostics with or without an interpreter', () => {
     const missing = `${directive}model User { id Missing }`;
     const fallback = projectWithSnapshots();
     fallback.set(schemaUri, missing);
@@ -169,7 +215,9 @@ describe('ProjectArtifacts binder', () => {
       interpretationDouble(() => ok({} as never)).interpretation,
     );
     successful.set(schemaUri, missing);
-    expect(successful.project.diagnostics(schemaUri)).toEqual([]);
+    expect(successful.project.diagnostics(schemaUri).map(({ code }) => code)).toEqual([
+      'PSL_UNRESOLVED_REFERENCE',
+    ]);
     const failed = projectWithSnapshots(
       interpretationDouble(() =>
         notOk({
@@ -180,7 +228,44 @@ describe('ProjectArtifacts binder', () => {
     );
     failed.set(schemaUri, missing);
     expect(failed.project.diagnostics(schemaUri).map(({ code }) => code)).toEqual([
+      'PSL_UNRESOLVED_REFERENCE',
       'UNKNOWN_PRESET',
+    ]);
+  });
+
+  it('resolves a field preset without an interpreter', () => {
+    const { project, set } = projectWithSnapshots(undefined, false, {
+      ...controlStack,
+      authoringContributions: assembleAuthoringContributions([
+        {
+          id: 'fixture',
+          authoring: {
+            type: controlStack.authoringContributions.type,
+            field: {
+              temporal: {
+                createdAt: {
+                  kind: 'fieldPreset',
+                  output: { codecId: 'timestamp', nativeType: 'timestamp' },
+                },
+              },
+            },
+          },
+        },
+      ]),
+    });
+    set(schemaUri, `${directive}model User {\n  id Int\n  createdAt temporal.createdAt()\n}\n`);
+    expect(project.diagnostics(schemaUri)).toEqual([]);
+  });
+
+  it('describes unsupported attributes with the family describer without an interpreter', () => {
+    const schema = `${directive}model User {\n  id Int\n  @@bogus\n}\n`;
+    const { project, set } = projectWithSnapshots(undefined, false, {
+      ...controlStack,
+      pslDiagnostics: { describeUnsupportedAttribute: describeUnsupportedTestAttribute },
+    });
+    set(schemaUri, schema);
+    expect(project.diagnostics(schemaUri).map(({ code }) => code)).toEqual([
+      'PSL_UNSUPPORTED_MODEL_ATTRIBUTE',
     ]);
   });
 });
@@ -612,5 +697,75 @@ describe('ProjectArtifacts diagnostics', () => {
     expect(project.symbolDiagnostics()).toEqual([]);
     expect(Object.keys(project.symbolTable().topLevel.models)).toEqual([]);
     expect(parse).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectArtifacts binder', () => {
+  it('reports the same single unsupported-attribute diagnostic as createBinder produces directly', () => {
+    const schema = `${directive}model User {\n  id Int\n  @@bogus\n}\n`;
+    const { interpretation } = interpretationDouble(
+      () => ok({} as never),
+      interpretContextWithUnsupportedAttribute,
+    );
+    const { project, set } = projectWithSnapshots(interpretation);
+    set(schemaUri, schema);
+
+    const { document, sources } = parse(schema, schemaUri);
+    const { symbolTable } = buildSymbolTable({ documents: [document], sources });
+    const { diagnostics: expected } = createBinder({
+      symbolTable,
+      sources,
+      context: interpretContextWithUnsupportedAttribute,
+    });
+
+    expect(expected).toHaveLength(1);
+    expect(project.diagnostics(schemaUri)).toEqual(mapParseDiagnostics(expected));
+  });
+
+  it('reports the same single unknown-type diagnostic as createBinder produces directly', () => {
+    const schema = `${directive}model User {\n  id Int @id\n  role Role\n}\n`;
+    const { interpretation } = interpretationDouble(() => ok({} as never));
+    const { project, set } = projectWithSnapshots(interpretation);
+    set(schemaUri, schema);
+
+    const { document, sources } = parse(schema, schemaUri);
+    const { symbolTable } = buildSymbolTable({ documents: [document], sources });
+    const { diagnostics: expected } = createBinder({
+      symbolTable,
+      sources,
+      context: interpretContext,
+    });
+
+    expect(expected).toHaveLength(1);
+    expect(project.diagnostics(schemaUri)).toEqual(mapParseDiagnostics(expected));
+  });
+
+  it('serves the same binder instance across repeated reads and to interpret', () => {
+    const { interpretation, spy } = interpretationDouble(() => ok({} as never));
+    const { project, set } = projectWithSnapshots(interpretation);
+    set(schemaUri, cleanSource);
+    const first = project.binder();
+    expect(first).toBeDefined();
+    expect(project.binder()).toBe(first);
+    project.diagnostics(schemaUri);
+    expect(spy.mock.calls[0]?.[0].binder).toBe(first);
+  });
+
+  it('produces a new binder after a document edit', () => {
+    const { interpretation } = interpretationDouble(() => ok({} as never));
+    const { project, set } = projectWithSnapshots(interpretation);
+    set(schemaUri, cleanSource);
+    const first = project.binder();
+    set(schemaUri, `${directive}model User {\n  id Int @id\n  name Int\n}\n`);
+    project.documentChanged(schemaUri);
+    const second = project.binder();
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+  });
+
+  it('builds a binder from the control stack without an interpretation', () => {
+    const { project, set } = projectWithSnapshots();
+    set(schemaUri, cleanSource);
+    expect(project.binder()).toBeDefined();
   });
 });

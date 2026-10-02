@@ -1,26 +1,15 @@
 import { emptyCodecLookup } from '@internal/framework-components/codec';
-import { buildSymbolTable, EMPTY_DATA_TYPES } from '@internal/psl-parser';
-import { parse } from '@internal/psl-parser/syntax';
 import { describe, expect, it } from 'vitest';
-import { interpretPslDocumentToMongoContract } from '../src/interpreter';
+import { interpretMongoContract } from './interpreter-test-helpers';
 
 function interpret(schema: string) {
-  const { document, sources } = parse(schema, 'schema.prisma');
-  const { symbolTable } = buildSymbolTable({
-    documents: [document],
-    sources,
-  });
-  return interpretPslDocumentToMongoContract({
-    documents: [document],
-    symbolTable,
-    sources,
+  return interpretMongoContract(schema, {
     scalarTypeCodecIds: new Map([
       ['String', 'mongo/string@1'],
       ['ObjectId', 'mongo/objectId@1'],
     ]),
     controlMutationDefaults: { defaultFunctionRegistry: new Map() },
-    dataTypes: EMPTY_DATA_TYPES,
-    codecLookup: emptyCodecLookup,
+    codecLookup: { ...emptyCodecLookup, descriptorFor: () => undefined },
   });
 }
 

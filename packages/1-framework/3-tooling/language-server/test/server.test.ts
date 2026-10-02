@@ -1249,7 +1249,7 @@ describe('language server', { timeout: timeouts.databaseOperation }, () => {
     expect((await requestSignatureHelp(harness, schemaUri, position))?.signatures[0]?.label).toBe(
       '@marker(string, name: string, priority?: integer)',
     );
-    expect(factory).toHaveBeenCalledTimes(3);
+    expect(factory).toHaveBeenCalledTimes(2);
   });
 
   it('returns no signature help when project configuration cannot load', async () => {
@@ -3397,7 +3397,7 @@ describe('language server interpreter diagnostics', { timeout: timeouts.database
     } as unknown as PslInterpretCapable;
     const resolution: ConfigResolution = {
       ...(await resolutionForInputs([schemaPath])),
-      interpretation: { source, context: {} as unknown as ContractSourceContext },
+      interpretation: { source, context: completionInterpretationContext },
     };
     return { resolveInputs: async () => resolution, spy };
   }
@@ -3624,7 +3624,7 @@ describe('language server config failure surfacing', {
     } as unknown as PslInterpretCapable;
     return {
       ...(await resolutionForInputs([schemaPath])),
-      interpretation: { source, context: {} as unknown as ContractSourceContext },
+      interpretation: { source, context: completionInterpretationContext },
     };
   }
 

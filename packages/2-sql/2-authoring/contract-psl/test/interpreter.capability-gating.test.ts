@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
-import { interpretPslDocumentToSqlContract } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createBuiltinLikeControlMutationDefaults,
+  interpretSqlContract,
   modelsOf,
   postgresScalarTypeDescriptors,
   postgresTarget,
   sqliteScalarColumnDescriptors,
   sqliteTarget,
-  symbolTableInputFromParseArgs,
 } from './fixtures';
 
 const builtinControlMutationDefaults = createBuiltinLikeControlMutationDefaults();
@@ -24,19 +23,13 @@ const listSchema = `model User {
 
 describe('interpretPslDocumentToSqlContract scalar-list capability gating', () => {
   it('rejects a scalar list field against a target whose adapter lacks the scalarList capability', () => {
-    const document = symbolTableInputFromParseArgs({
-      schema: listSchema,
-      sourceId: 'schema.prisma',
-    });
-
-    const result = interpretPslDocumentToSqlContract({
+    const result = interpretSqlContract(listSchema, {
       target: sqliteTarget,
       scalarColumnDescriptors: sqliteScalarColumnDescriptors,
       composedExtensionContracts: new Map(),
       createNamespace: createTestSqlNamespace,
       dataTypes: fixtureDataTypeSupport,
       capabilities: sqliteCapabilities,
-      ...document,
       controlMutationDefaults: builtinControlMutationDefaults,
     });
 
@@ -54,19 +47,13 @@ describe('interpretPslDocumentToSqlContract scalar-list capability gating', () =
   });
 
   it('authors a scalar list field cleanly against a target whose adapter reports the scalarList capability', () => {
-    const document = symbolTableInputFromParseArgs({
-      schema: listSchema,
-      sourceId: 'schema.prisma',
-    });
-
-    const result = interpretPslDocumentToSqlContract({
+    const result = interpretSqlContract(listSchema, {
       target: postgresTarget,
       scalarColumnDescriptors: postgresScalarTypeDescriptors,
       composedExtensionContracts: new Map(),
       createNamespace: createTestSqlNamespace,
       dataTypes: fixtureDataTypeSupport,
       capabilities: postgresCapabilities,
-      ...document,
       controlMutationDefaults: builtinControlMutationDefaults,
     });
 
@@ -86,19 +73,13 @@ describe('interpretPslDocumentToSqlContract scalar-list capability gating', () =
   });
 
   it('rejects a scalar list against an empty capability matrix (fail-closed)', () => {
-    const document = symbolTableInputFromParseArgs({
-      schema: listSchema,
-      sourceId: 'schema.prisma',
-    });
-
-    const result = interpretPslDocumentToSqlContract({
+    const result = interpretSqlContract(listSchema, {
       target: postgresTarget,
       scalarColumnDescriptors: postgresScalarTypeDescriptors,
       composedExtensionContracts: new Map(),
       createNamespace: createTestSqlNamespace,
       dataTypes: fixtureDataTypeSupport,
       capabilities: {},
-      ...document,
       controlMutationDefaults: builtinControlMutationDefaults,
     });
 

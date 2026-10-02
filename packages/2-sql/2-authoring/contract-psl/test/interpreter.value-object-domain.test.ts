@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
-import { interpretPslDocumentToSqlContract } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createBuiltinLikeControlMutationDefaults,
+  interpretSqlContract,
   postgresCodecLookup,
   postgresScalarAuthoringTypes,
   postgresScalarTypeDescriptors,
   postgresTarget,
-  symbolTableInputFromParseArgs,
   testEnumEntityContributions,
   testEnumPslBlockDescriptor,
 } from './fixtures';
@@ -16,11 +15,7 @@ import {
 const pslBlockDescriptors = { enum: testEnumPslBlockDescriptor };
 
 function interpretPostgres(schema: string) {
-  const document = symbolTableInputFromParseArgs({
-    schema,
-    sourceId: 'schema.prisma',
-  });
-  return interpretPslDocumentToSqlContract({
+  return interpretSqlContract(schema, {
     target: postgresTarget,
     scalarColumnDescriptors: postgresScalarTypeDescriptors,
     authoringContributions: {
@@ -35,7 +30,6 @@ function interpretPostgres(schema: string) {
     composedExtensionContracts: new Map(),
     createNamespace: createTestSqlNamespace,
     capabilities: { sql: { scalarList: true } },
-    ...document,
     controlMutationDefaults: createBuiltinLikeControlMutationDefaults(),
   });
 }

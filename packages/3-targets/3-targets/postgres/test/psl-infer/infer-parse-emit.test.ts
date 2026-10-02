@@ -1,14 +1,16 @@
-import {
-  type AuthoringTypeNamespace,
-  collectScalarTypeConstructors,
-} from '@internal/framework-components/authoring';
+import type { AuthoringTypeNamespace } from '@internal/framework-components/authoring';
 import type { CodecLookupWithDescriptors } from '@internal/framework-components/codec';
 import { createDataTypeLookup } from '@internal/framework-components/codec';
 import { assembleAuthoringContributions } from '@internal/framework-components/control';
-import { buildSymbolTable } from '@internal/psl-parser';
-import { parse } from '@internal/psl-parser/syntax';
+import { withSeedDiagnostics } from '@internal/psl-parser/interpret';
+import { bindPslSchema } from '@internal/psl-parser/test';
 import type { SqlStorage } from '@internal/sql-contract/types';
 import { interpretPslDocumentToSqlContract } from '@internal/sql-contract-psl';
+import {
+  describeUnsupportedSqlAttribute,
+  sqlAttributeSpecs,
+} from '@internal/sql-contract-psl/attribute-specs';
+import { sqlContextInput } from '@internal/sql-contract-psl/test';
 import { SqlSchemaIR } from '@internal/sql-schema-ir/types';
 import { postgresDataTypes } from '@internal/target-postgres/data-types';
 import { assert, describe, expect, it } from 'vitest';
@@ -93,24 +95,36 @@ const codecLookup: CodecLookupWithDescriptors = {
 };
 
 function parseAndEmit(source: string) {
-  const { document, sources } = parse(source, 'infer-parse-emit.test.psl');
-  const { symbolTable } = buildSymbolTable({
-    documents: [document],
-    sources,
+  const bound = bindPslSchema(source, {
+    sourceId: 'infer-parse-emit.test.psl',
+    context: {
+      composedExtensions: [],
+      composedExtensionContracts: new Map(),
+      authoringContributions: {
+        ...assembled,
+        type: { ...authoringTypes, ...assembled.type },
+        attributeSpecs: sqlAttributeSpecs,
+      },
+      pslDiagnostics: { describeUnsupportedAttribute: describeUnsupportedSqlAttribute },
+      codecLookup,
+      controlMutationDefaults: { defaultFunctionRegistry: new Map(), generatorDescriptors: [] },
+      dataTypes: { entries: assembled.dataTypes, lookup: postgresDataTypeLookup },
+      resolvedInputs: [],
+      capabilities: {},
+    },
   });
-  return interpretPslDocumentToSqlContract({
-    documents: [document],
-    dataTypes: { entries: assembled.dataTypes, lookup: postgresDataTypeLookup },
-    symbolTable,
-    sources,
-    capabilities: {},
-    target,
-    scalarColumnDescriptors: collectScalarTypeConstructors(authoringTypes),
-    authoringContributions: assembled,
-    composedExtensionContracts: new Map(),
-    createNamespace: postgresCreateNamespace,
-    codecLookup,
-  });
+  return withSeedDiagnostics(
+    interpretPslDocumentToSqlContract({
+      documents: bound.documents,
+      sources: bound.sources,
+      symbolTable: bound.symbolTable,
+      binder: bound.binder,
+      ...sqlContextInput(bound.context),
+      target,
+      createNamespace: postgresCreateNamespace,
+    }),
+    bound.seedDiagnostics,
+  );
 }
 
 describe('Postgres PSL inference round trip', () => {

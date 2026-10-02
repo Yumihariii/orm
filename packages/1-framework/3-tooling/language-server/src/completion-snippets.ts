@@ -1,5 +1,9 @@
-import type { AuthoringTypeConstructorDescriptor } from '@internal/framework-components/authoring';
-import type { ArgType, Param, PositionalParam } from '@internal/psl-parser';
+import type {
+  ArgType,
+  ContributedTypeDescriptor,
+  Param,
+  PositionalParam,
+} from '@internal/psl-parser';
 
 interface ArgumentSignature {
   readonly positional?: readonly PositionalParam<unknown, never>[];
@@ -18,10 +22,10 @@ export function requiredArgumentsSnippet(signature: ArgumentSignature): string {
 
 export function typeConstructorSnippet(
   name: string,
-  descriptor: AuthoringTypeConstructorDescriptor,
+  descriptor: ContributedTypeDescriptor,
 ): string {
   const args = descriptor.args ?? [];
-  const reference = descriptor.entityRefArg;
+  const reference = descriptor.kind === 'typeConstructor' ? descriptor.entityRefArg : undefined;
   const count = Math.max(args.length, (reference?.index ?? -1) + 1);
   const values: string[] = [];
   for (let index = 0; index < count; index++) {

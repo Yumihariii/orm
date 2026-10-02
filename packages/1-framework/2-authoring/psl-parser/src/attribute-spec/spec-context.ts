@@ -1,6 +1,7 @@
 import type { DataTypeSupport } from '@internal/framework-components/authoring';
 import { createDataTypeLookup } from '@internal/framework-components/codec';
 import type { ControlDefaultRegistries } from '@internal/framework-components/control';
+import type { Resolution } from '../binder';
 import type { BlockSpecContext } from '../block-spec/types';
 import type { FieldSymbol, ModelSymbol, SymbolTable } from '../symbol-table';
 import type { AttributeCtx, AttributeSpec, FieldAttributeCtx, ModelAttributeCtx } from './types';
@@ -17,6 +18,7 @@ export const EMPTY_DATA_TYPES: DataTypeSupport = { entries: {}, lookup: createDa
 
 export interface FieldAttributeSpecContext extends AttributeSpecContext {
   readonly field: FieldSymbol;
+  readonly typeResolution: Resolution | undefined;
 }
 
 export type ModelAttributeSpecFactory = (
