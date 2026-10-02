@@ -809,6 +809,65 @@ function snapshotAlreadyPresent(format: Format): Record<string, string> {
   return files;
 }
 
+const invoiceSpec: ContractSpec = {
+  target: 'postgres',
+  tables: {
+    invoice: [
+      {
+        name: 'id',
+        codecId: 'pg/uuid@1',
+        nativeType: 'uuid',
+        dataType: 'pg/uuid',
+        nullable: false,
+      },
+      {
+        name: 'amount',
+        codecId: 'pg/numeric@1',
+        nativeType: 'numeric',
+        dataType: 'pg/numeric',
+        nullable: false,
+        typeParams: { precision: 10, scale: 2 },
+      },
+    ],
+  },
+};
+
+function singleSpaceProject(
+  spec: ContractSpec,
+  format: Format,
+  contractDir: string,
+  migrationsDir: string,
+): Record<string, string> {
+  const files = contractFiles(spec, format);
+  return {
+    [`${contractDir}/contract.json`]: emittedJson(files.contract),
+    [`${contractDir}/contract.d.ts`]: files.dts,
+    [`${migrationsDir}/snapshots/${files.hash}/contract.json`]: snapshotJson(files.contract),
+    [`${migrationsDir}/snapshots/${files.hash}/contract.d.ts`]: files.dts,
+    ...migrationFiles(
+      {
+        dir: `${migrationsDir}/app/20260101T0000_initial`,
+        from: null,
+        to: files.hash,
+        migrationTs: true,
+      },
+      '../../snapshots',
+    ),
+    [`${migrationsDir}/app/refs/head.json`]: ref(files.hash),
+  };
+}
+
+function dbMigrations(format: Format): Record<string, string> {
+  return singleSpaceProject(userSpec, format, 'db', 'db/migrations');
+}
+
+function twoMigrationRoots(format: Format): Record<string, string> {
+  return {
+    ...singleSpaceProject(userSpec, format, 'db', 'db/migrations'),
+    ...singleSpaceProject(invoiceSpec, format, 'billing', 'billing/history'),
+  };
+}
+
 const olderLayoutSpec: ContractSpec = { ...userSpec, layout: 'tables' };
 
 function staleHash(format: Format): Record<string, string> {
@@ -837,4 +896,6 @@ writeCase('snapshot-already-present', snapshotAlreadyPresent);
 writeCase('stale-hash', staleHash);
 writeCase('unknown-codec', unknownCodec);
 writeCase('unknown-target', unknownTarget);
+writeCase('db-migrations', dbMigrations);
+writeCase('two-migration-roots', twoMigrationRoots);
 writeUnchangedCase('snapshot-collision', snapshotCollision());

@@ -127,6 +127,20 @@ describe('a SQLite project with literal defaults', () => {
   });
 });
 
+describe('migrations outside a directory named migrations', () => {
+  for (const name of ['db-migrations', 'two-migration-roots']) {
+    it(`upgrades ${name}`, () => {
+      const run = upgrade(name);
+      expect({
+        status: run.status,
+        stdout: run.stdout,
+        stderr: run.stderr,
+        tree: readTree(run.root),
+      }).toEqual({ status: 0, stdout: '', stderr: '', tree: expectedTree(name, 'after') });
+    });
+  }
+});
+
 describe('an extension package', () => {
   it('rewrites the contract space with the extension copy of the script', () => {
     const run = upgrade('extension-package', 'before', extensionScript);

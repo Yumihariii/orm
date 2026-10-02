@@ -347,25 +347,27 @@ function listFiles(root: string): ProjectFiles {
   const migrationJson: string[] = [];
   const refs: string[] = [];
   const migrationTs: string[] = [];
-  const visit = (dir: string, underMigrations: boolean): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+  const visit = (dir: string): void => {
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
       compareCodeUnits(a.name, b.name),
-    )) {
+    );
+    const isMigrationPackage = entries.some(
+      (entry) => entry.isFile() && entry.name === 'migration.json',
+    );
+    for (const entry of entries) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (!SKIPPED_DIRECTORIES.has(entry.name))
-          visit(path, underMigrations || entry.name === 'migrations');
+        if (!SKIPPED_DIRECTORIES.has(entry.name)) visit(path);
         continue;
       }
       if (!entry.isFile()) continue;
       if (entry.name.endsWith('.json')) json.push(path);
-      if (!underMigrations) continue;
       if (entry.name === 'migration.json') migrationJson.push(path);
       if (entry.name.endsWith('.json') && basename(dir) === 'refs') refs.push(path);
-      if (entry.name === 'migration.ts') migrationTs.push(path);
+      if (entry.name === 'migration.ts' && isMigrationPackage) migrationTs.push(path);
     }
   };
-  visit(root, false);
+  visit(root);
   return { json, migrationJson, refs, migrationTs };
 }
 
@@ -374,8 +376,7 @@ function isSnapshotContract(path: string): boolean {
   return (
     basename(path) === 'contract.json' &&
     HASH.test(basename(snapshotDir)) &&
-    basename(dirname(snapshotDir)) === 'snapshots' &&
-    dirname(path).split(sep).includes('migrations')
+    basename(dirname(snapshotDir)) === 'snapshots'
   );
 }
 
