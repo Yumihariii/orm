@@ -169,10 +169,10 @@ export function signedSpace(space: string, storageHash: string): DbSignSpaceOutc
   };
 }
 
-export function changedSpace(space: string, storageHash: string): DbSignSpaceOutcome {
+export function conflictSpace(space: string, storageHash: string): DbSignSpaceOutcome {
   return {
     space,
-    status: 'changed',
+    status: 'conflict',
     contract: { storageHash, profileHash: PROFILE_HASH },
     markerChanged: {
       verified: { storageHash: HASH_PREVIOUS, profileHash: PROFILE_HASH },

@@ -150,7 +150,7 @@ function spaceNode(outcome: DbSignSpaceOutcome): TreeNode {
         status: 'error',
         children: issueNodes(outcome.schema.schema.issues, 'error'),
       };
-    case 'changed':
+    case 'conflict':
       return {
         label: `${outcome.space}: not signed, its marker changed after the schema was verified`,
         status: 'error',
@@ -178,8 +178,8 @@ function quotedList(spaces: readonly DbSignSpaceOutcome[]): string {
 
 function signSummary(spaces: readonly DbSignSpaceOutcome[]): string {
   const failed = spaces.filter((outcome) => outcome.status === 'failed');
-  const changed = spaces.filter((outcome) => outcome.status === 'changed');
-  if (failed.length === 0 && changed.length === 0) {
+  const conflicts = spaces.filter((outcome) => outcome.status === 'conflict');
+  if (failed.length === 0 && conflicts.length === 0) {
     return 'Database signed';
   }
   const signed = spaces.filter(isSigned);
@@ -189,18 +189,18 @@ function signSummary(spaces: readonly DbSignSpaceOutcome[]): string {
       : [
           `Database schema does not satisfy contract for ${failed.length === 1 ? 'space' : 'spaces'} ${quotedList(failed)}`,
         ]),
-    ...(changed.length === 0
+    ...(conflicts.length === 0
       ? []
       : [
-          `${changed.length === 1 ? 'marker of space' : 'markers of spaces'} ${quotedList(changed)} changed while db sign ran`,
+          `${conflicts.length === 1 ? 'marker of space' : 'markers of spaces'} ${quotedList(conflicts)} changed while db sign ran`,
         ]),
   ].join('; ');
   const signedText = signed.length === 0 ? 'signed nothing' : `signed ${quotedList(signed)}`;
   return `${problems.charAt(0).toUpperCase()}${problems.slice(1)}; ${signedText}`;
 }
 
-function markerChangedDiagnostic(
-  outcome: Extract<DbSignSpaceOutcome, { readonly status: 'changed' }>,
+function markerConflictDiagnostic(
+  outcome: Extract<DbSignSpaceOutcome, { readonly status: 'conflict' }>,
 ): Diagnostic {
   const { verified, found } = outcome.markerChanged;
   return {
@@ -586,8 +586,8 @@ export function createDbSignCommand(
                   }),
                 }),
               ];
-            case 'changed':
-              return [markerChangedDiagnostic(outcome)];
+            case 'conflict':
+              return [markerConflictDiagnostic(outcome)];
             default:
               return [];
           }

@@ -152,7 +152,7 @@ describe('signContractSpaces', () => {
     });
 
     expect(result.assertOk().spaces.map((outcome) => [outcome.space, outcome.status])).toEqual([
-      ['app', 'changed'],
+      ['app', 'conflict'],
       ['pgvector', 'signed'],
     ]);
   });

@@ -1,8 +1,8 @@
 import { ok } from '@internal/utils/result';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  changedSpace,
   cleanupProjectDirs,
+  conflictSpace,
   diagnosticsOf,
   envelopeOf,
   failedSpace,
@@ -24,7 +24,7 @@ afterEach(cleanupProjectDirs);
 describe('db sign when a marker changes while it runs', () => {
   function appChangedExtensionSigns() {
     mocks.dbSign.mockResolvedValue(
-      ok({ spaces: [changedSpace('app', HASH_A), signedSpace('pgvector', HASH_EXT)] }),
+      ok({ spaces: [conflictSpace('app', HASH_A), signedSpace('pgvector', HASH_EXT)] }),
     );
   }
 
@@ -39,7 +39,7 @@ describe('db sign when a marker changes while it runs', () => {
     expect(run.presented?.data).toEqual({
       ok: false,
       summary: 'Marker of space "app" changed while db sign ran; signed "pgvector"',
-      spaces: [changedSpace('app', HASH_A), signedSpace('pgvector', HASH_EXT)],
+      spaces: [conflictSpace('app', HASH_A), signedSpace('pgvector', HASH_EXT)],
       advancedRefs: [{ space: 'pgvector', name: 'db', hash: HASH_EXT }],
     });
   });
@@ -47,7 +47,7 @@ describe('db sign when a marker changes while it runs', () => {
   it('names schema failures and changed markers together', async () => {
     const dir = await projectDir();
     mocks.dbSign.mockResolvedValue(
-      ok({ spaces: [failedSpace('app', HASH_A), changedSpace('pgvector', HASH_EXT)] }),
+      ok({ spaces: [failedSpace('app', HASH_A), conflictSpace('pgvector', HASH_EXT)] }),
     );
 
     const run = await harness(ormConfig()).run(['db', 'sign', '--json'], { cwd: dir });

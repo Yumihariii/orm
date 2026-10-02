@@ -132,7 +132,7 @@ A script that reads `db sign --json` reads one outcome per space. The document w
 }
 ```
 
-`status` is `signed`, `unchanged` (the marker already held the contract's hashes), `failed` or `changed`. A failed space has `space`, `status`, `contract: { storageHash }` and `schema`, the verification result, in place of `marker`, and `ok` is `false`. A changed space is one whose marker another process, such as `migrate`, changed while `db sign` ran: it has `markerChanged: { verified, found }` in place of `marker`, it is not signed, and the command exits with code 4; run `db sign` again once that process has finished.
+`status` is `signed`, `unchanged` (the marker already held the contract's hashes), `failed` or `conflict`. A failed space has `space`, `status`, `contract: { storageHash }` and `schema`, the verification result, in place of `marker`, and `ok` is `false`. A space in conflict is one whose marker another process, such as `migrate`, changed while `db sign` ran: it has `markerChanged: { verified, found }` in place of `marker`, it is not signed, and the command exits with code 4; run `db sign` again once that process has finished.
 
 Code that signs through the programmatic control API calls `client.dbSign({ contract, migrationsDir })` instead of `client.sign({ contract })`, which is removed with `SignOptions` and `SignDatabaseResult`. `dbSign` verifies every contract space and signs each one that verified, as `db sign` does.
 

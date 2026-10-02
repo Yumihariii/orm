@@ -358,7 +358,7 @@ withTempDir(({ createTempDir }) => {
 
           expect(sign.exitCode, `db sign: ${sign.stderr}`).toBe(4);
           expect(signedSpaces(sign)).toEqual([
-            { space: 'app', status: 'changed', storageHash: appHash, previous: undefined },
+            { space: 'app', status: 'conflict', storageHash: appHash, previous: undefined },
             {
               space: TEST_SPACE_ID,
               status: 'signed',
@@ -417,7 +417,7 @@ withTempDir(({ createTempDir }) => {
 
           expect(sign.exitCode, `db sign: ${sign.stderr}`).toBe(4);
           expect(signedSpaces(sign)).toEqual([
-            { space: 'app', status: 'changed', storageHash: appHash, previous: undefined },
+            { space: 'app', status: 'conflict', storageHash: appHash, previous: undefined },
             {
               space: TEST_SPACE_ID,
               status: 'signed',

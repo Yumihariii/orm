@@ -39,11 +39,11 @@ export interface ExecuteDbSignOptions<TFamilyId extends string, TTargetId extend
 }
 
 /**
- * What `db sign` did with one contract space: `signed` when its marker was written, `unchanged` when the marker already held the contract's hashes, `failed` when the live schema does not satisfy the space's contract, `changed` when another process wrote the marker after `db sign` read it. A `failed` or `changed` space keeps its marker as it was.
+ * What `db sign` did with one contract space: `signed` when its marker was written, `unchanged` when the marker already held the contract's hashes, `failed` when the live schema does not satisfy the space's contract, `conflict` when another process wrote the marker after `db sign` read it. A `failed` or `conflict` space keeps its marker as it was.
  */
 export type DbSignSpaceOutcome =
   | (SpaceSigned & { readonly status: 'signed' | 'unchanged' })
-  | (SpaceMarkerChanged & { readonly status: 'changed' })
+  | (SpaceMarkerChanged & { readonly status: 'conflict' })
   | {
       readonly space: string;
       readonly status: 'failed';
@@ -98,7 +98,7 @@ function markerHashes(marker: ContractMarkerRecord | undefined): MarkerHashes | 
 }
 
 /**
- * Reads every space's marker, verifies every contract space of the aggregate against the live schema without strict mode, then writes the marker of every space that verified in one call to the family, each only while it still holds the hashes read here. A space that fails verification is reported with its schema result and keeps its marker; a space whose marker another process wrote in the meantime is reported as changed and keeps that marker. The family gets the spaces in the order `migrate` applies them, extension spaces first, so the two take their locks in the same order.
+ * Reads every space's marker, verifies every contract space of the aggregate against the live schema without strict mode, then writes the marker of every space that verified in one call to the family, each only while it still holds the hashes read here. A space that fails verification is reported with its schema result and keeps its marker; a space whose marker another process wrote in the meantime is reported as a conflict and keeps that marker. The family gets the spaces in the order `migrate` applies them, extension spaces first, so the two take their locks in the same order.
  */
 export async function signContractSpaces<TFamilyId extends string, TTargetId extends string>(
   options: SignContractSpacesOptions<TFamilyId, TTargetId>,
@@ -170,7 +170,7 @@ export async function signContractSpaces<TFamilyId extends string, TTargetId ext
         };
       }
       if ('markerChanged' in signature) {
-        return { ...signature, status: 'changed' };
+        return { ...signature, status: 'conflict' };
       }
       const written = signature.marker.created || signature.marker.updated;
       return { ...signature, status: written ? 'signed' : 'unchanged' };
