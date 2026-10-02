@@ -470,24 +470,17 @@ export function lowerDataTypeDefault(input: {
 }
 
 /**
- * Reads one value written in a contract source outside a default, such as an enum member, for a codec, as {@link lowerDataTypeDefault} reads a default: the literal's entry gives it a data type, the codec's data type takes it directly or through a cast, and the codec checks it. A refusal is worded for `subject`.
+ * Reads one number literal written in a contract source outside a default, such as an enum member's value, from its source text for a codec, as {@link lowerDataTypeDefault} reads a default: the number's entry gives it a data type, the codec's data type takes it directly or through a cast, and the codec checks it. A refusal is worded for `subject`.
  */
-export function readWrittenValueForCodec(input: {
-  readonly value: string | number | boolean;
+export function readWrittenNumberForCodec(input: {
+  readonly text: string;
   readonly codecId: string;
   readonly codecLookup: CodecLookupWithDescriptors | undefined;
   readonly support: DataTypeSupport;
   readonly subject: string;
 }): DefaultDiagnosticResult {
-  const { value } = input;
-  const written: WrittenValue =
-    typeof value === 'string'
-      ? { kind: 'string', text: value }
-      : typeof value === 'number'
-        ? { kind: 'number', text: String(value) }
-        : { kind: 'boolean', value };
   const read = readDataTypeDefault({
-    written,
+    written: { kind: 'number', text: input.text },
     isList: false,
     column: { codecId: input.codecId },
     codecLookup: input.codecLookup,

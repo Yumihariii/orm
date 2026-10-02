@@ -4,6 +4,10 @@ import type { Codec } from '../src/shared/codec';
 import { emptyCodecLookup } from '../src/shared/codec-types';
 import { createDataTypeLookup } from '../src/shared/data-type';
 import { readEnumBlockMembers } from '../src/shared/enum-block-members';
+import type {
+  AuthoringEntityContext,
+  WrittenValueReading,
+} from '../src/shared/framework-authoring';
 import type { ParsedPslExtensionBlock } from '../src/shared/psl-extension-block';
 
 const SPAN = {
@@ -107,6 +111,92 @@ describe('readEnumBlockMembers', () => {
         dataTypeLookup: createDataTypeLookup([]),
       }),
     ).toThrow(failure);
+  });
+
+  describe('with a family reader for number members', () => {
+    function readWithReader(
+      values: Record<string, JsonValue | undefined>,
+      numberTexts: Record<string, string>,
+      reading: (text: string) => WrittenValueReading | undefined,
+    ) {
+      const diagnostics: unknown[] = [];
+      const readerInputs: unknown[] = [];
+      const ctx: AuthoringEntityContext = {
+        family: 'test',
+        target: 'test',
+        codecLookup: { ...emptyCodecLookup, descriptorFor: () => undefined },
+        dataTypeLookup: createDataTypeLookup([]),
+        sourceId: 'schema.prisma',
+        diagnostics: { push: (d) => diagnostics.push(d) },
+        readWrittenNumber: (input) => {
+          readerInputs.push(input);
+          return reading(input.text);
+        },
+      };
+      const members = readEnumBlockMembers(
+        { ...enumBlock(values), numberTexts },
+        lowerCasingCodec.id,
+        lowerCasingCodec,
+        ctx,
+      );
+      return { members, diagnostics, readerInputs };
+    }
+
+    it('hands a number member to the reader as its source text, and every other member to the codec', () => {
+      expect(
+        readWithReader(
+          { Big: 9007199254740992, Text: 'T', Bare: undefined },
+          { Big: '9007199254740993' },
+          (text) => ({ ok: true, value: text }),
+        ),
+      ).toEqual({
+        members: [
+          { name: 'Big', value: '9007199254740993' },
+          { name: 'Text', value: 'T' },
+          { name: 'Bare', value: 'Bare' },
+        ],
+        diagnostics: [],
+        readerInputs: [
+          {
+            text: '9007199254740993',
+            codecId: 'test/lower-casing@1',
+            subject: 'enum "Key" member "Big"',
+          },
+        ],
+      });
+    });
+
+    it('reports the reason the reader refuses a number member', () => {
+      expect(
+        readWithReader({ Low: 1 }, { Low: '1' }, () => ({
+          ok: false,
+          message: 'enum "Key" member "Low": test/text has no cast from test/integer',
+        })),
+      ).toMatchObject({
+        members: undefined,
+        diagnostics: [
+          {
+            code: 'PSL_EXTENSION_INVALID_VALUE',
+            message: 'enum "Key" member "Low": test/text has no cast from test/integer',
+            sourceId: 'schema.prisma',
+            span: SPAN,
+          },
+        ],
+      });
+    });
+
+    it('hands a number member to the codec when the reader does not read for the codec', () => {
+      expect(readWithReader({ Low: 1 }, { Low: '1' }, () => undefined)).toMatchObject({
+        members: undefined,
+        diagnostics: [
+          {
+            code: 'PSL_EXTENSION_INVALID_VALUE',
+            message:
+              'enum "Key" member "Low" was rejected by codec "test/lower-casing@1": expected text, got number',
+          },
+        ],
+      });
+    });
   });
 
   it('reports an enum with no members', () => {

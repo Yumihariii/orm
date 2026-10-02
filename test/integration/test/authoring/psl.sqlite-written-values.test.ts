@@ -182,4 +182,38 @@ describe('enum members on SQLite', () => {
       });
     },
   );
+
+  async function storedEnumValues(codecId: string, member: string) {
+    const result = await author(
+      '  priority Priority',
+      `enum Priority {\n  @@type("${codecId}")\n  ${member}\n}\n\n`,
+    );
+    if (!result.ok) {
+      return {
+        diagnostics: result.failure.diagnostics.map(({ code, message }) => ({ code, message })),
+      };
+    }
+    const { storage } = result.value as Contract<SqlStorage>;
+    return {
+      values: Object.values(storage.namespaces).flatMap(
+        (namespace) => namespace.entries.valueSet?.['Priority']?.values ?? [],
+      ),
+    };
+  }
+
+  it('stores a 64-bit member of a sqlite/bigint@1 enum with every digit', async () => {
+    expect(await storedEnumValues('sqlite/bigint@1', 'Low = 9223372036854775807')).toEqual({
+      values: ['9223372036854775807'],
+    });
+  });
+
+  it.each([
+    ['sqlite/bigint@1', '"9223372036854775807"', '9223372036854775807'],
+    ['sqlite/bigintnumber@1', '"42"', '42'],
+  ])(
+    'accepts a %s member written as the string %s, read by the codec',
+    async (codecId, written, stored) => {
+      expect(await storedEnumValues(codecId, `Low = ${written}`)).toEqual({ values: [stored] });
+    },
+  );
 });

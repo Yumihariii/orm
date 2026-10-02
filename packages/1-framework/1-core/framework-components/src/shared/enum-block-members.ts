@@ -11,7 +11,7 @@ export interface EnumBlockMember {
 }
 
 /**
- * Reads the members of an `enum` block through its codec. A member's value is read as a column default is read, when the family gives a reader for written values (`ctx.readWrittenValue`); a bare member is read from its own name.
+ * Reads the members of an `enum` block through its codec. A member written as a number literal is read from its source text as a column default is read, when the family gives a reader for it (`ctx.readWrittenNumber`), so no digit is lost; every other member goes to the codec's `decodeJson`, and a bare member is read from its own name.
  * Pushes a diagnostic and returns `undefined` when the codec refuses a member, when two members
  * store the same value, or when the block has no members. Shared by every family's enum factory.
  */
@@ -30,11 +30,9 @@ export function readEnumBlockMembers(
   for (const [memberName, memberValue] of Object.entries(block.values)) {
     const span = block.parameterSpans[memberName] ?? block.span;
     const reading =
-      typeof memberValue === 'string' ||
-      typeof memberValue === 'number' ||
-      typeof memberValue === 'boolean'
-        ? ctx.readWrittenValue?.({
-            value: memberValue,
+      typeof memberValue === 'number'
+        ? ctx.readWrittenNumber?.({
+            text: block.numberTexts?.[memberName] ?? String(memberValue),
             codecId,
             subject: `enum "${block.name}" member "${memberName}"`,
           })
