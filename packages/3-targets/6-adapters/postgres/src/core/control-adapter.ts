@@ -1820,6 +1820,7 @@ async function pgWrittenDefault(
   codecRef: CodecRef | undefined,
   where: LiteralDefaultColumn,
 ): Promise<unknown> {
+  if (value === null && nativeType.endsWith('[]')) return null;
   if (Array.isArray(value) && nativeType.endsWith('[]')) {
     const encoded =
       codecRef === undefined

@@ -98,15 +98,19 @@ export type {
 export type {
   AttributeSymbol,
   Binder,
+  BinderContext,
   BinderResult,
   BoundSpec,
-  CreateBinderOptions,
+  CreateBinderInput,
+  DescribeUnresolvedType,
   DescribeUnsupportedAttribute,
   PslSymbol,
   Resolution,
+  UnresolvedTypeReference,
   UnsupportedAttribute,
 } from '../binder';
 export {
+  contributedTypeOf,
   createBinder,
   PSL_UNRESOLVED_REFERENCE,
   typeReferenceNode,
@@ -136,6 +140,8 @@ export type {
 export type {
   ContributedMember,
   ContributedNamespaceSymbol,
+  ContributedTypeDescriptor,
+  ContributedTypeNamespace,
   ContributedTypeScope,
   ContributedTypeSymbol,
 } from '../contributed-type-scope';
@@ -152,6 +158,7 @@ export type {
   EntitySelector,
   ResolvedEntityReference,
 } from '../entity-reference';
+export { entityReference, matchesSelector } from '../entity-reference';
 export { findBlockDescriptor } from '../extension-block';
 export { NAME_THE_PSL_SOURCE_LOSES } from '../name-the-psl-source-loses';
 export {
@@ -163,6 +170,7 @@ export {
 } from '../resolve';
 export { isPrismaNextSchema, renameLegacyDirective } from '../schema-directive';
 export type { Scope, ScopeResolution } from '../scope';
+export { isNamespaceLike, memberEntries } from '../scope';
 export type {
   BlockSymbol,
   BuildSymbolTableOptions,

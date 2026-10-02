@@ -6,9 +6,11 @@ import type {
 import {
   type AttributeSpec,
   assembleAttributeSpecs,
+  type Binder,
   type BlockAttributeSpecFactory,
   findBlockDescriptor,
   type SymbolTable,
+  typeReferenceNode,
 } from '@internal/psl-parser';
 import type {
   FieldDeclarationAst,
@@ -16,9 +18,9 @@ import type {
   ModelDeclarationAst,
 } from '@internal/psl-parser/syntax';
 import { blindCast } from '@internal/utils/casts';
-import { blockSymbolForNode, fieldSymbolForNode, modelSymbolForNode } from './completion-symbols';
 
 export interface AttributeSpecSource {
+  readonly binder: Binder;
   readonly pslBlockDescriptors: AuthoringPslBlockDescriptorNamespace;
   readonly symbolTable: SymbolTable;
   readonly authoringContributions?: AssembledAuthoringContributions;
@@ -45,8 +47,8 @@ export function attributeSpecResolver(
   switch (context.ownerKind) {
     case 'block': {
       const descriptor = findBlockDescriptor(source.pslBlockDescriptors, context.blockKeyword);
-      const block = blockSymbolForNode(source.symbolTable, context.block);
-      if (block === undefined) return () => undefined;
+      const block = source.binder.declaredSymbol(context.block.syntax);
+      if (block?.kind !== 'block') return () => undefined;
       return (name) => {
         const factory = descriptor?.attributes?.[name];
         if (factory === undefined) return undefined;
@@ -58,8 +60,8 @@ export function attributeSpecResolver(
     }
     case 'model': {
       if (source.authoringContributions === undefined) return () => undefined;
-      const model = modelSymbolForNode(source.symbolTable, context.model);
-      if (model === undefined || source.controlMutationDefaults === undefined) {
+      const model = source.binder.declaredSymbol(context.model.syntax);
+      if (model?.kind !== 'model' || source.controlMutationDefaults === undefined) {
         return () => undefined;
       }
       const specs = assembleAttributeSpecs(source.authoringContributions);
@@ -75,12 +77,12 @@ export function attributeSpecResolver(
     }
     case 'field': {
       if (source.authoringContributions === undefined) return () => undefined;
-      const model = modelSymbolForNode(source.symbolTable, context.model);
-      if (model === undefined || source.controlMutationDefaults === undefined) {
+      const model = source.binder.declaredSymbol(context.model.syntax);
+      if (model?.kind !== 'model' || source.controlMutationDefaults === undefined) {
         return () => undefined;
       }
-      const field = fieldSymbolForNode(model, context.field);
-      if (field === undefined) return () => undefined;
+      const field = source.binder.declaredSymbol(context.field.syntax);
+      if (field?.kind !== 'field') return () => undefined;
       const specs = assembleAttributeSpecs(source.authoringContributions);
       const specContext = {
         symbols: source.symbolTable,
@@ -90,7 +92,9 @@ export function attributeSpecResolver(
           dataTypeEntries: source.authoringContributions.dataTypes ?? {},
         },
       };
-      return (name) => specs.field[name]?.({ ...specContext, field });
+      const node = typeReferenceNode(field);
+      const typeResolution = node === undefined ? undefined : source.binder.symbolForNode(node);
+      return (name) => specs.field[name]?.({ ...specContext, field, typeResolution });
     }
   }
 }

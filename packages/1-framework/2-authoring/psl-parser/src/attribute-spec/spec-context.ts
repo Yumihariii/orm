@@ -1,4 +1,5 @@
 import type { ControlDefaultRegistries } from '@internal/framework-components/control';
+import type { Resolution } from '../binder';
 import type { BlockSpecContext } from '../block-spec/types';
 import type { FieldSymbol, ModelSymbol, SymbolTable } from '../symbol-table';
 import type { AttributeCtx, AttributeSpec, FieldAttributeCtx, ModelAttributeCtx } from './types';
@@ -11,6 +12,7 @@ export interface AttributeSpecContext {
 
 export interface FieldAttributeSpecContext extends AttributeSpecContext {
   readonly field: FieldSymbol;
+  readonly typeResolution: Resolution | undefined;
 }
 
 export type ModelAttributeSpecFactory = (
