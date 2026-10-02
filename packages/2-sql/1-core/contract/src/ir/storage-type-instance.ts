@@ -25,13 +25,11 @@ export interface StorageTypeInstance extends StorageType {
 export type AuthoredStorageType = Omit<StorageTypeInstance, 'dataType'>;
 
 /**
- * Construction-time input for a codec-triple entry, internal to this package: a {@link StorageTypeInstance} whose `kind` and `typeParams` may be left out; {@link toStorageTypeInstance} stamps the `kind` and normalises a missing `typeParams` to `{}`.
+ * A `storage.types` entry as `SqlStorage` and {@link toStorageTypeInstance} take it: a {@link StorageTypeInstance} whose `kind` and `typeParams` may be left out. {@link toStorageTypeInstance} stamps the `kind` and normalises a missing `typeParams` to `{}`.
  */
-export interface StorageTypeInstanceInput {
-  readonly codecId: string;
-  readonly dataType: string;
+export type StorageTypeInstanceInput = Omit<StorageTypeInstance, 'kind' | 'typeParams'> & {
   readonly typeParams?: Record<string, unknown>;
-}
+};
 
 /**
  * Stamp the codec-instance `kind` discriminator on a caller-supplied
