@@ -312,7 +312,7 @@ describe('db verify + db sign for Mongo (end-to-end)', {
             storageHash: baseContract.storage.storageHash,
             profileHash: baseContract.profileHash,
           },
-          marker: { created: true, updated: false },
+          status: 'created',
         },
       ]);
     });
@@ -322,7 +322,7 @@ describe('db verify + db sign for Mongo (end-to-end)', {
 
       const [signature] = await signApp(baseContract, baseMarker);
 
-      expect(signature).toMatchObject({ marker: { created: false, updated: false } });
+      expect(signature).toMatchObject({ status: 'unchanged' });
     });
 
     it('updates marker when contract changes', async () => {
@@ -330,9 +330,7 @@ describe('db verify + db sign for Mongo (end-to-end)', {
 
       const [signature] = await signApp(updatedContract, baseMarker);
 
-      expect(signature).toMatchObject({
-        marker: { created: false, updated: true, previous: baseMarker },
-      });
+      expect(signature).toMatchObject({ status: 'updated', previous: baseMarker });
     });
 
     it('preserves existing invariants when re-signing with a new contract', async () => {
@@ -346,7 +344,7 @@ describe('db verify + db sign for Mongo (end-to-end)', {
       });
 
       const [signature] = await signApp(updatedContract, baseMarker);
-      expect(signature).toMatchObject({ marker: { updated: true } });
+      expect(signature).toMatchObject({ status: 'updated' });
 
       const markerDoc = await db
         .collection<{ _id: string; invariants?: readonly string[] }>('_prisma_migrations')
