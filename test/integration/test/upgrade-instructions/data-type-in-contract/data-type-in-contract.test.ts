@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { timeouts } from '@repo/test-utils';
 import { dirname, join, relative } from 'pathe';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -160,6 +161,52 @@ describe('an extension package', () => {
   it('ships the same script to both audiences', () => {
     expect(readFileSync(extensionScript, 'utf8')).toBe(readFileSync(appScript, 'utf8'));
   });
+});
+
+describe('a run that stops partway', () => {
+  const failAtWrite = join(here, 'fail-at-write.ts');
+
+  function runFailingAt(root: string, failAt: number): Run {
+    const result = spawnSync(process.execPath, ['--import', failAtWrite, appScript, root], {
+      encoding: 'utf8',
+      env: { ...process.env, FAIL_AT_WRITE: String(failAt) },
+    });
+    return { root, status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  for (const name of [
+    'postgres-extension-space',
+    'snapshot-already-present',
+    'two-migration-roots',
+  ]) {
+    it(`leaves ${name} in a state a second run finishes, whichever write fails`, {
+      timeout: timeouts.repeatedScriptRuns,
+    }, () => {
+      const expected = expectedTree(name, 'after');
+      const outcomes: { failAt: number; first: unknown; second: unknown }[] = [];
+      for (let failAt = 1; ; failAt++) {
+        const first = runFailingAt(copyFixture(name, 'before'), failAt);
+        if (first.status === 0) break;
+        const second = runScript(first.root);
+        outcomes.push({
+          failAt,
+          first: { status: first.status, stderr: first.stderr },
+          second: { status: second.status, stderr: second.stderr, tree: readTree(second.root) },
+        });
+      }
+      expect(outcomes.length).toBeGreaterThan(2);
+      expect(outcomes).toEqual(
+        outcomes.map(({ failAt }) => ({
+          failAt,
+          first: {
+            status: 1,
+            stderr: `injected failure at write ${failAt}; the upgrade stopped partway, run the script again to finish it\n`,
+          },
+          second: { status: 0, stderr: '', tree: expected },
+        })),
+      );
+    });
+  }
 });
 
 describe('a migration.ts that writes hashes as literals', () => {

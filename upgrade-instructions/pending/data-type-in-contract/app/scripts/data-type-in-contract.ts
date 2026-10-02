@@ -19,7 +19,15 @@
  * `@internal/migration-tools` because a project's strict `node_modules` does not expose them.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 type Json = null | boolean | number | string | Json[] | JsonRecord;
@@ -103,6 +111,7 @@ const SQLITE_INTEGER_CODECS = new Set([
 const SQLITE_JSON_CODEC = 'sqlite/json@1';
 const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git', 'dist', 'build']);
 const HASH = /^[0-9a-f]{64}$/;
+const TEMPORARY_SUFFIX = '.data-type-in-contract-tmp';
 
 function isRecord(value: unknown): value is JsonRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -340,6 +349,7 @@ interface ProjectFiles {
   readonly migrationJson: readonly string[];
   readonly refs: readonly string[];
   readonly migrationTs: readonly string[];
+  readonly leftovers: readonly string[];
 }
 
 function listFiles(root: string): ProjectFiles {
@@ -347,6 +357,7 @@ function listFiles(root: string): ProjectFiles {
   const migrationJson: string[] = [];
   const refs: string[] = [];
   const migrationTs: string[] = [];
+  const leftovers: string[] = [];
   const visit = (dir: string): void => {
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
       compareCodeUnits(a.name, b.name),
@@ -356,6 +367,10 @@ function listFiles(root: string): ProjectFiles {
     );
     for (const entry of entries) {
       const path = join(dir, entry.name);
+      if (entry.name.endsWith(TEMPORARY_SUFFIX)) {
+        leftovers.push(path);
+        continue;
+      }
       if (entry.isDirectory()) {
         if (!SKIPPED_DIRECTORIES.has(entry.name)) visit(path);
         continue;
@@ -368,7 +383,7 @@ function listFiles(root: string): ProjectFiles {
     }
   };
   visit(root);
-  return { json, migrationJson, refs, migrationTs };
+  return { json, migrationJson, refs, migrationTs, leftovers };
 }
 
 function isSnapshotContract(path: string): boolean {
@@ -737,13 +752,39 @@ function readDirectory(dir: string): Map<string, string> {
   const files = new Map<string, string>();
   if (!existsSync(dir)) return files;
   for (const entry of readdirSync(dir, { withFileTypes: true }))
-    if (entry.isFile()) files.set(entry.name, readFileSync(join(dir, entry.name), 'utf8'));
+    if (entry.isFile() && !entry.name.endsWith(TEMPORARY_SUFFIX))
+      files.set(entry.name, readFileSync(join(dir, entry.name), 'utf8'));
   return files;
 }
 
 function sameFiles(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {
   return a.size === b.size && [...a].every(([name, content]) => b.get(name) === content);
 }
+
+function temporaryPath(path: string): string {
+  return join(dirname(path), `.${basename(path)}${TEMPORARY_SUFFIX}`);
+}
+
+function writeFile(path: string, text: string): void {
+  const temporary = temporaryPath(path);
+  writeFileSync(temporary, text);
+  renameSync(temporary, path);
+}
+
+function writeDirectory(dir: string, files: ReadonlyMap<string, string>): void {
+  const temporary = temporaryPath(dir);
+  mkdirSync(temporary);
+  for (const [name, text] of files) writeFileSync(join(temporary, name), text);
+  renameSync(temporary, dir);
+}
+
+function removeDirectory(dir: string): void {
+  const temporary = temporaryPath(dir);
+  renameSync(dir, temporary);
+  rmSync(temporary, { recursive: true, force: true });
+}
+
+const JSON_FILES_THAT_MUST_PARSE = new Set(['contract.json', 'migration.json']);
 
 function main({ root, dataTypes, errors }: Options): number {
   if (errors.length > 0) {
@@ -759,6 +800,13 @@ function main({ root, dataTypes, errors }: Options): number {
   for (const path of files.json) {
     const text = readFileSync(path, 'utf8');
     const contract = parseJson(text);
+    if (
+      contract === undefined &&
+      (JSON_FILES_THAT_MUST_PARSE.has(basename(path)) || files.refs.includes(path))
+    ) {
+      stops.push(`${display(path)}: not valid JSON`);
+      continue;
+    }
     if (
       !isRecord(contract) ||
       contract['targetFamily'] !== 'sql' ||
@@ -807,10 +855,12 @@ function main({ root, dataTypes, errors }: Options): number {
     if (plan.oldHash !== plan.newHash && !hashes.has(plan.oldHash))
       hashes.set(plan.oldHash, plan.newHash);
 
-  const writes = new Map<string, string>();
-  const removals = new Set<string>();
   const newDirectories = new Map<string, Map<string, string>>();
   const sourceDirectories = new Set<string>();
+  const removals = new Set<string>();
+  const snapshotRewrites: [string, string][] = [];
+  const referenceWrites = new Map<string, string>();
+  const contractWrites = new Map<string, string>();
   for (const plan of plans) {
     const dtsPath = plan.snapshot
       ? join(dirname(plan.path), 'contract.d.ts')
@@ -826,17 +876,22 @@ function main({ root, dataTypes, errors }: Options): number {
         )
       : undefined;
     if (!plan.snapshot) {
-      writes.set(plan.path, plan.content);
-      if (dts !== undefined) writes.set(dtsPath, dts);
+      if (dts !== undefined) referenceWrites.set(dtsPath, dts);
+      contractWrites.set(plan.path, plan.content);
       continue;
     }
     const oldDir = dirname(plan.path);
     const newDir = join(dirname(oldDir), plan.newHash);
+    sourceDirectories.add(oldDir);
+    if (newDir === oldDir) {
+      if (dts !== undefined) snapshotRewrites.push([dtsPath, dts]);
+      snapshotRewrites.push([plan.path, plan.content]);
+      continue;
+    }
+    removals.add(oldDir);
     const content = readDirectory(oldDir);
     content.set('contract.json', plan.content);
     if (dts !== undefined) content.set('contract.d.ts', dts);
-    sourceDirectories.add(oldDir);
-    if (newDir !== oldDir) removals.add(oldDir);
     const planned = newDirectories.get(newDir);
     if (planned !== undefined && !sameFiles(planned, content)) {
       stops.push(`${display(newDir)}: snapshot directory already exists with different content`);
@@ -846,13 +901,8 @@ function main({ root, dataTypes, errors }: Options): number {
   }
   for (const [dir, content] of newDirectories) {
     if (sourceDirectories.has(dir) || !existsSync(dir)) continue;
-    if (!sameFiles(readDirectory(dir), content))
-      stops.push(`${display(dir)}: snapshot directory already exists with different content`);
-  }
-
-  if (stops.length > 0) {
-    process.stderr.write(`${[...new Set(stops)].join('\n')}\n`);
-    return 1;
+    if (sameFiles(readDirectory(dir), content)) newDirectories.delete(dir);
+    else stops.push(`${display(dir)}: snapshot directory already exists with different content`);
   }
 
   for (const path of files.migrationJson) {
@@ -866,6 +916,10 @@ function main({ root, dataTypes, errors }: Options): number {
     if (nextFrom === from && nextTo === to) continue;
     const opsPath = join(dirname(path), 'ops.json');
     const ops = existsSync(opsPath) ? parseJson(readFileSync(opsPath, 'utf8')) : undefined;
+    if (existsSync(opsPath) && ops === undefined) {
+      stops.push(`${display(opsPath)}: not valid JSON`);
+      continue;
+    }
     const oldMigrationHash = metadata['migrationHash'];
     let next = replaceQuotedHashes(text, hashes);
     if (
@@ -877,12 +931,12 @@ function main({ root, dataTypes, errors }: Options): number {
       const migrationHash = computeMigrationHash({ ...metadata, from: nextFrom, to: nextTo }, ops);
       next = next.replace(`"${oldMigrationHash}"`, `"${migrationHash}"`);
     }
-    writes.set(path, next);
+    referenceWrites.set(path, next);
   }
   for (const path of files.refs) {
     const text = readFileSync(path, 'utf8');
     const next = replaceQuotedHashes(text, hashes);
-    if (next !== text) writes.set(path, next);
+    if (next !== text) referenceWrites.set(path, next);
   }
   for (const path of files.migrationTs) {
     const text = readFileSync(path, 'utf8');
@@ -890,15 +944,28 @@ function main({ root, dataTypes, errors }: Options): number {
       /(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])/g,
       (hash: string) => hashes.get(hash) ?? hash,
     );
-    if (next !== text) writes.set(path, next);
+    if (next !== text) referenceWrites.set(path, next);
   }
 
-  for (const dir of removals) rmSync(dir, { recursive: true, force: true });
-  for (const [dir, content] of newDirectories) {
-    mkdirSync(dir, { recursive: true });
-    for (const [name, text] of content) writeFileSync(join(dir, name), text);
+  if (stops.length > 0) {
+    process.stderr.write(`${[...new Set(stops)].join('\n')}\n`);
+    return 1;
   }
-  for (const [path, text] of writes) writeFileSync(path, text);
+
+  try {
+    for (const path of files.leftovers) rmSync(path, { recursive: true, force: true });
+    for (const [dir, content] of newDirectories) writeDirectory(dir, content);
+    for (const [path, text] of snapshotRewrites) writeFile(path, text);
+    for (const [path, text] of referenceWrites) writeFile(path, text);
+    for (const [path, text] of contractWrites) writeFile(path, text);
+    for (const dir of removals) removeDirectory(dir);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(
+      `${message}; the upgrade stopped partway, run the script again to finish it\n`,
+    );
+    return 1;
+  }
   if (notices.length > 0) process.stdout.write(`${notices.join('\n')}\n`);
   return 0;
 }

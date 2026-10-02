@@ -52,6 +52,8 @@ pnpm exec tsx <path-to-this-guide>/scripts/data-type-in-contract.ts
 
 It reads and writes files only and needs no database. It rewrites every `*.json` file under the root that parses as a SQL contract in the old format (a column or `storage.types` entry that stores `nativeType`), skipping `node_modules`, `.git`, `dist` and `build`. That includes a test fixture of an old-format contract: if you keep such a fixture on purpose, restore it with git afterwards (`git restore <file>`), or keep it outside the project root.
 
+If the script stops partway, for example on a full disk or when you press Ctrl-C, run it again: it finishes the upgrade. It prints the error and `the upgrade stopped partway, run the script again to finish it`, and exits 1. A file the script was writing at that moment is either unchanged or complete, and it removes its own temporary files (ending in `.data-type-in-contract-tmp`) on the next run.
+
 Run your formatter afterwards. The script replaces text in `migration.ts` and `contract.d.ts`, so the import order in `migration.ts` and the line wrapping in `contract.d.ts` can differ from what a fresh emit and your formatter produce.
 
 A contract already in the new format is never changed, even when its stored hash does not match its content, so a project already in the new format is left unchanged. It prints `<file>: stored hash did not recompute; rehashed from content` for an old-format contract whose stored storage hash does not match its content, and rewrites it anyway. It changes no file and exits 1 when a column uses a codec it does not know (`<file>: unknown codec <id>; name its data type with --data-type <id>=<data type id>`) or when a renamed snapshot directory already exists with different content.
