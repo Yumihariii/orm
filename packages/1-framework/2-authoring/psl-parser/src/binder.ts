@@ -1,11 +1,19 @@
+import type { ContractSourceContext } from '@internal/config/config-types';
 import type {
   AuthoringPslBlockDescriptorNamespace,
-  AuthoringTypeNamespace,
   DataTypeSupport,
 } from '@internal/framework-components/authoring';
-import type { ControlMutationDefaultRegistry } from '@internal/framework-components/control';
+import type {
+  ControlMutationDefaultRegistry,
+  ControlMutationDefaults,
+} from '@internal/framework-components/control';
 import type { ContributedPslDiagnosticCode } from '@internal/framework-components/psl-ast';
 import { blindCast } from '@internal/utils/casts';
+import {
+  assembleAttributeSpecs,
+  resolveDescribeUnresolvedType,
+  resolveDescribeUnsupportedAttribute,
+} from './attribute-spec/assemble';
 import type {
   AttributeSpecNamespace,
   BlockAttributeSpecFactory,
@@ -20,7 +28,12 @@ import type {
 } from './attribute-spec/types';
 import { blockSpecFactoryOf } from './block-spec/descriptor';
 import { blockSpecContext } from './block-spec/spec-context';
-import { contributedTypeScope } from './contributed-type-scope';
+import {
+  type ContributedTypeNamespace,
+  type ContributedTypeSymbol,
+  contributedTypeScope,
+  mergeContributedTypes,
+} from './contributed-type-scope';
 import { diagnosticSource } from './diagnostic';
 import { findBlockDescriptor } from './extension-block';
 import type { ParseDiagnostic } from './parse';
@@ -30,6 +43,7 @@ import {
   documentScope,
   isNamespaceLike,
   lookupMember,
+  namedTypeBaseScope,
   namespaceScope,
   type Scope,
   type ScopeResolution,
@@ -101,15 +115,35 @@ export type DescribeUnsupportedAttribute = (
   unsupported: UnsupportedAttribute,
 ) => ParseDiagnostic | undefined;
 
-export interface CreateBinderOptions {
+export interface UnresolvedTypeReference {
+  readonly field: FieldSymbol;
+  readonly owner: ModelSymbol | CompositeTypeSymbol;
+  readonly written: string;
+}
+
+export type DescribeUnresolvedType = (unresolved: UnresolvedTypeReference) => string | undefined;
+
+export interface BinderContext
+  extends Pick<ContractSourceContext, 'authoringContributions' | 'pslDiagnostics' | 'dataTypes'> {
+  readonly controlMutationDefaults: Pick<ControlMutationDefaults, 'defaultFunctionRegistry'>;
+}
+
+export interface CreateBinderInput {
   readonly sources: PslSources;
   readonly symbolTable: SymbolTable;
-  readonly typeConstructors: AuthoringTypeNamespace;
+  readonly context: BinderContext;
+}
+
+interface BindingInputs {
+  readonly sources: PslSources;
+  readonly symbolTable: SymbolTable;
+  readonly contributedTypes: ContributedTypeNamespace;
   readonly attributeSpecs: AttributeSpecNamespace;
   readonly defaultFunctionRegistry: ControlMutationDefaultRegistry;
   readonly dataTypes: DataTypeSupport;
   readonly pslBlockDescriptors?: AuthoringPslBlockDescriptorNamespace | undefined;
   readonly describeUnsupportedAttribute?: DescribeUnsupportedAttribute | undefined;
+  readonly describeUnresolvedType?: DescribeUnresolvedType | undefined;
 }
 
 export interface BinderResult {
@@ -119,6 +153,15 @@ export interface BinderResult {
 
 export function typeReferenceNode(symbol: FieldSymbol | NamedTypeSymbol): SyntaxNode | undefined {
   return symbol.node.typeAnnotation()?.name()?.syntax;
+}
+
+export function contributedTypeOf(
+  resolution: Resolution | undefined,
+  binder: Binder,
+): ContributedTypeSymbol | undefined {
+  const base = resolution?.kind === 'namedType' ? typeReferenceNode(resolution.symbol) : undefined;
+  const target = base === undefined ? resolution : binder.symbolForNode(base);
+  return target?.kind === 'contributedType' ? target.symbol : undefined;
 }
 
 class PslBinder implements Binder {
@@ -191,21 +234,45 @@ function walkEntities(
   }
 }
 
-export function createBinder(options: CreateBinderOptions): BinderResult {
+export function createBinder(input: CreateBinderInput): BinderResult {
+  const { symbolTable, sources, context } = input;
+  const contributions = context.authoringContributions;
+  const describeUnsupportedAttributeFactory = resolveDescribeUnsupportedAttribute(
+    context.pslDiagnostics,
+  );
+  const describeUnresolvedTypeFactory = resolveDescribeUnresolvedType(context.pslDiagnostics);
+
+  return bind({
+    sources,
+    symbolTable,
+    contributedTypes: mergeContributedTypes(contributions.field, contributions.type),
+    attributeSpecs: assembleAttributeSpecs(contributions),
+    pslBlockDescriptors: contributions.pslBlockDescriptors,
+    defaultFunctionRegistry: context.controlMutationDefaults.defaultFunctionRegistry,
+    dataTypes: context.dataTypes,
+    ...(describeUnsupportedAttributeFactory !== undefined
+      ? { describeUnsupportedAttribute: describeUnsupportedAttributeFactory(sources) }
+      : {}),
+    ...(describeUnresolvedTypeFactory !== undefined
+      ? { describeUnresolvedType: describeUnresolvedTypeFactory(contributions) }
+      : {}),
+  });
+}
+
+function bind(options: BindingInputs): BinderResult {
   const {
     sources,
     symbolTable,
-    typeConstructors,
+    contributedTypes,
     attributeSpecs,
     defaultFunctionRegistry,
     dataTypes,
     describeUnsupportedAttribute,
+    describeUnresolvedType,
   } = options;
   const pslBlockDescriptors = options.pslBlockDescriptors ?? {};
-  const document = documentScope(
-    symbolTable.topLevel,
-    contributedScope(contributedTypeScope(typeConstructors)),
-  );
+  const contributed = contributedScope(contributedTypeScope(contributedTypes));
+  const document = documentScope(symbolTable.topLevel, contributed);
   const stack = new ScopeStack(document);
   const scopes = new WeakMap<SyntaxNode, Scope>();
   const declarations = new WeakMap<SyntaxNode, PslSymbol>();
@@ -213,13 +280,13 @@ export function createBinder(options: CreateBinderOptions): BinderResult {
   const diagnostics: ParseDiagnostic[] = [];
   const binder = new PslBinder(declarations, references, document, scopes);
 
+  const baseScope = namedTypeBaseScope(symbolTable.topLevel, contributed);
   for (const symbol of Object.values(symbolTable.topLevel.namedTypes)) {
     declarations.set(symbol.node.syntax, symbol);
     const name = symbol.node.typeAnnotation()?.name();
-    const outcome = resolveTypeReference(name, document);
-    if (name !== undefined && outcome !== undefined) {
-      references.set(name.syntax, outcome.resolution);
-    }
+    const outcome = resolveTypeReference(name, baseScope);
+    if (name === undefined || outcome === undefined) continue;
+    references.set(name.syntax, outcome.resolution);
   }
   for (const symbol of Object.values(symbolTable.topLevel.blocks)) {
     declarations.set(symbol.node.syntax, symbol);
@@ -244,7 +311,11 @@ export function createBinder(options: CreateBinderOptions): BinderResult {
       declarations.set(field.node.syntax, field);
       const node = typeReferenceNode(field);
       if (node === undefined) continue;
-      const outcome = resolveTypeReference(field.node.typeAnnotation()?.name(), stack.current());
+      const outcome = resolveTypeReference(
+        field.node.typeAnnotation()?.name(),
+        stack.current(),
+        (written) => describeUnresolvedType?.({ field, owner: entity, written }),
+      );
       if (outcome === undefined) continue;
       references.set(node, outcome.resolution);
       if (outcome.message !== undefined) {
@@ -288,7 +359,12 @@ export function createBinder(options: CreateBinderOptions): BinderResult {
         field,
         field.attributes,
         attributeSpecs.field,
-        (factory) => (specContext === undefined ? undefined : factory({ ...specContext, field })),
+        (factory) => {
+          if (specContext === undefined) return undefined;
+          const node = typeReferenceNode(field);
+          const typeResolution = node === undefined ? undefined : references.get(node);
+          return factory({ ...specContext, field, typeResolution });
+        },
         { ...context, field },
       );
     }
@@ -657,6 +733,7 @@ interface TypeReferenceOutcome {
 function resolveTypeReference(
   reference: QualifiedNameAst | undefined,
   scope: Scope,
+  describeUnresolved?: (written: string) => string | undefined,
 ): TypeReferenceOutcome | undefined {
   if (reference === undefined || reference.isOverQualified()) return undefined;
   if (reference.space() !== undefined) return { resolution: { kind: 'crossSpace' } };
@@ -667,9 +744,10 @@ function resolveTypeReference(
     namespaceId === undefined ? scope.lookup(name) : qualifiedMember(namespaceId, name, scope);
   if (found === undefined) {
     const written = namespaceId === undefined ? name : `${namespaceId}.${name}`;
+    const message = describeUnresolved?.(written) ?? `Cannot find type "${written}"`;
     return {
       resolution: { kind: 'unresolved', name: written },
-      message: `Cannot find type "${written}"`,
+      message,
       name: written,
     };
   }

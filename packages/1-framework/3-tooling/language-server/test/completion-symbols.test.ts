@@ -1,9 +1,10 @@
 import type { AuthoringTypeNamespace } from '@internal/framework-components/authoring';
-import { buildSymbolTable, createBinder, EMPTY_DATA_TYPES } from '@internal/psl-parser';
+import { buildSymbolTable, createBinder } from '@internal/psl-parser';
 import { parse } from '@internal/psl-parser/syntax';
 import { describe, expect, it } from 'vitest';
 import { classifyPslCompletionContext } from '../src/completion-context';
 import { localFieldNames, referencedFieldNames } from '../src/completion-symbols';
+import { binderContextFromStack } from '../src/lsp-control-stack';
 
 function fields(
   sourceWithCursor: string,
@@ -25,21 +26,25 @@ function fields(
   if (context.kind !== 'fieldAttributeValue' && context.kind !== 'modelAttributeValue') {
     throw new Error(`Unexpected context: ${context.kind}`);
   }
+  const emptyContext = binderContextFromStack({ scalarTypes: [], pslBlockDescriptors: {} });
   const { binder } = createBinder({
     sources,
     symbolTable,
-    typeConstructors: {
-      ...Object.fromEntries(
-        scalarTypes.map((name) => [
-          name,
-          { kind: 'typeConstructor', output: { codecId: 'scalar' } },
-        ]),
-      ),
-      ...typeConstructors,
+    context: {
+      ...emptyContext,
+      authoringContributions: {
+        ...emptyContext.authoringContributions,
+        type: {
+          ...Object.fromEntries(
+            scalarTypes.map((name) => [
+              name,
+              { kind: 'typeConstructor', output: { codecId: 'scalar' } },
+            ]),
+          ),
+          ...typeConstructors,
+        },
+      },
     },
-    attributeSpecs: { model: {}, field: {} },
-    defaultFunctionRegistry: new Map(),
-    dataTypes: EMPTY_DATA_TYPES,
   });
   return {
     local: localFieldNames(context, binder),

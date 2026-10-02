@@ -5,13 +5,8 @@ import type {
 import { collectScalarTypeConstructors } from '@internal/framework-components/authoring';
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
-import { interpretPslDocumentToSqlContract as interpretPslDocumentToSqlContractInternal } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
-import {
-  postgresScalarAuthoringTypes,
-  postgresTarget,
-  symbolTableInputFromParseArgs,
-} from './fixtures';
+import { interpretSqlContract, postgresScalarAuthoringTypes, postgresTarget } from './fixtures';
 import { sqlStorageFromSuccessfulSqlInterpretation } from './interpret-sql-contract-storage';
 import { builtinControlMutationDefaults } from './interpreter-defaults-support';
 
@@ -40,9 +35,8 @@ describe('generator defaults never mutate storage — the type position is the o
   } satisfies AuthoringContributions;
 
   const interpret = (schema: string) =>
-    interpretPslDocumentToSqlContractInternal({
+    interpretSqlContract(schema, {
       dataTypes: fixtureDataTypeSupport,
-      ...symbolTableInputFromParseArgs({ schema, sourceId: 'schema.prisma' }),
       target: postgresTarget,
       scalarColumnDescriptors: collectScalarTypeConstructors(authoringTypes),
       authoringContributions,

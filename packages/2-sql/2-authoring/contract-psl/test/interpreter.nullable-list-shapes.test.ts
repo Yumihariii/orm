@@ -2,26 +2,28 @@ import { entityAt } from '@internal/framework-components/ir';
 import type { StorageTable } from '@internal/sql-contract/types';
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
-import {
-  type InterpretPslDocumentToSqlContractInput,
-  interpretPslDocumentToSqlContract as interpretPslDocumentToSqlContractInternal,
-} from '../src/interpreter';
+import type { InterpretPslDocumentToSqlContractInput } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createBuiltinLikeControlMutationDefaults,
+  interpretSqlContract,
   modelsOf,
   postgresScalarAuthoringTypes,
   postgresScalarTypeDescriptors,
   postgresTarget,
-  symbolTableInputFromParseArgs,
   valueObjectsOf,
 } from './fixtures';
 
 describe('interpretPslDocumentToSqlContract value objects and list fields', () => {
   const builtinControlMutationDefaults = createBuiltinLikeControlMutationDefaults();
-  const interpretPslDocumentToSqlContract = (
+  const interpretPostgresSchema = (
+    schema: string,
     input: Omit<
       InterpretPslDocumentToSqlContractInput,
+      | 'documents'
+      | 'sources'
+      | 'symbolTable'
+      | 'binder'
       | 'target'
       | 'scalarColumnDescriptors'
       | 'composedExtensionContracts'
@@ -31,7 +33,7 @@ describe('interpretPslDocumentToSqlContract value objects and list fields', () =
     > &
       Partial<Pick<InterpretPslDocumentToSqlContractInput, 'composedExtensionContracts'>>,
   ) =>
-    interpretPslDocumentToSqlContractInternal({
+    interpretSqlContract(schema, {
       target: postgresTarget,
       scalarColumnDescriptors: postgresScalarTypeDescriptors,
       authoringContributions: {
@@ -46,8 +48,8 @@ describe('interpretPslDocumentToSqlContract value objects and list fields', () =
     });
 
   it('preserves list and element nullability for scalar list fields inside composite types', () => {
-    const document = symbolTableInputFromParseArgs({
-      schema: `type Address {
+    const result = interpretPostgresSchema(
+      `type Address {
   requiredElements String[]
   nullableElementValues String?[]
   nullableList String[]?
@@ -58,13 +60,10 @@ model User {
   id Int @id
   home Address?
 }`,
-      sourceId: 'schema.prisma',
-    });
-
-    const result = interpretPslDocumentToSqlContract({
-      ...document,
-      controlMutationDefaults: builtinControlMutationDefaults,
-    });
+      {
+        controlMutationDefaults: builtinControlMutationDefaults,
+      },
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -98,21 +97,18 @@ model User {
   });
 
   it('lowers the scalar-list nullability matrix to exact domain and storage shapes', () => {
-    const document = symbolTableInputFromParseArgs({
-      schema: `model User {
+    const result = interpretPostgresSchema(
+      `model User {
   id Int @id
   requiredElements String[]
   nullableElementValues String?[]
   nullableList String[]?
   nullableElementValuesAndList String?[]?
   }`,
-      sourceId: 'schema.prisma',
-    });
-
-    const result = interpretPslDocumentToSqlContract({
-      ...document,
-      controlMutationDefaults: builtinControlMutationDefaults,
-    });
+      {
+        controlMutationDefaults: builtinControlMutationDefaults,
+      },
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -190,8 +186,8 @@ model User {
   });
 
   it('lowers nullable value object list elements to domain metadata without storage list metadata', () => {
-    const document = symbolTableInputFromParseArgs({
-      schema: `type Address {
+    const result = interpretPostgresSchema(
+      `type Address {
   street String
   city String
 }
@@ -200,13 +196,10 @@ model User {
   id Int @id
   addresses Address?[]
 }`,
-      sourceId: 'schema.prisma',
-    });
-
-    const result = interpretPslDocumentToSqlContract({
-      ...document,
-      controlMutationDefaults: builtinControlMutationDefaults,
-    });
+      {
+        controlMutationDefaults: builtinControlMutationDefaults,
+      },
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;

@@ -1,6 +1,5 @@
 import { ok } from '@internal/utils/result';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_DATA_TYPES } from '../src/attribute-spec/spec-context';
 import { createBinder } from '../src/binder';
 import type { AttributeCtx } from '../src/exports';
 import {
@@ -19,6 +18,7 @@ import { PslSources } from '../src/source-file';
 import { FieldAttributeAst } from '../src/syntax/ast/attributes';
 import type { ExpressionAst } from '../src/syntax/ast/expressions';
 import { createSyntaxTree } from '../src/syntax/red';
+import { binderContext } from './support';
 
 function argOf(source: string): { expr: ExpressionAst; ctx: AttributeCtx } {
   const cursor = new Cursor('schema.prisma', `@x(${source})`);
@@ -32,10 +32,7 @@ function argOf(source: string): { expr: ExpressionAst; ctx: AttributeCtx } {
   const { binder } = createBinder({
     sources,
     symbolTable: symbols,
-    typeConstructors: {},
-    attributeSpecs: { model: {}, field: {} },
-    defaultFunctionRegistry: new Map(),
-    dataTypes: EMPTY_DATA_TYPES,
+    context: binderContext(),
   });
   return { expr, ctx: { sources, symbols, binder } };
 }

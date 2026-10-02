@@ -1,22 +1,6 @@
 import { UNBOUND_NAMESPACE_ID } from '@internal/framework-components/ir';
-import { buildSymbolTable, EMPTY_DATA_TYPES, type SymbolTable } from '@internal/psl-parser';
-import type { DocumentAst, PslSources } from '@internal/psl-parser/syntax';
-import { parse } from '@internal/psl-parser/syntax';
 import { describe, expect, it } from 'vitest';
-import { interpretPslDocumentToMongoContract } from '../src/interpreter';
-
-function symbolTableInput(schema: string): {
-  documents: readonly DocumentAst[];
-  symbolTable: SymbolTable;
-  sources: PslSources;
-} {
-  const { document, sources } = parse(schema, 'test.prisma');
-  const { symbolTable } = buildSymbolTable({
-    documents: [document],
-    sources,
-  });
-  return { documents: [document], symbolTable, sources };
-}
+import { interpretMongoContract } from './interpreter-test-helpers';
 
 const scalarTypeCodecIds: ReadonlyMap<string, string> = new Map([
   ['String', 'mongo/string@1'],
@@ -25,12 +9,14 @@ const scalarTypeCodecIds: ReadonlyMap<string, string> = new Map([
 ]);
 
 function interpret(schema: string) {
-  return interpretPslDocumentToMongoContract({
-    ...symbolTableInput(schema),
-    scalarTypeCodecIds,
-    defaultFunctionRegistry: new Map(),
-    dataTypes: EMPTY_DATA_TYPES,
-  });
+  return interpretMongoContract(
+    schema,
+    {
+      scalarTypeCodecIds,
+      defaultFunctionRegistry: new Map(),
+    },
+    'test.prisma',
+  );
 }
 
 function diagnosticsOf(schema: string) {

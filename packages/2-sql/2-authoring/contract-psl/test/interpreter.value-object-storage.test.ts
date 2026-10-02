@@ -2,10 +2,10 @@ import type { Contract } from '@internal/contract/types';
 import type { SqlStorage } from '@internal/sql-contract/types';
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
-import { interpretPslDocumentToSqlContract } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createBuiltinLikeControlMutationDefaults,
+  interpretSqlContract,
   postgresCodecLookup,
   postgresScalarAuthoringTypes,
   postgresScalarTypeDescriptors,
@@ -13,7 +13,6 @@ import {
   sqliteScalarAuthoringTypes,
   sqliteScalarColumnDescriptors,
   sqliteTarget,
-  symbolTableInputFromParseArgs,
 } from './fixtures';
 
 function userFieldsAndColumns(contract: Contract) {
@@ -31,7 +30,7 @@ function interpretPostgres(
   schema: string,
   valueObjectStorage: { readonly valueObjectStorageType?: string } = jsonbStorage,
 ) {
-  return interpretPslDocumentToSqlContract({
+  return interpretSqlContract(schema, {
     target: postgresTarget,
     scalarColumnDescriptors: postgresScalarTypeDescriptors,
     authoringContributions: {
@@ -44,7 +43,6 @@ function interpretPostgres(
     createNamespace: createTestSqlNamespace,
     dataTypes: fixtureDataTypeSupport,
     capabilities: { sql: { scalarList: true } },
-    ...symbolTableInputFromParseArgs({ schema, sourceId: 'schema.prisma' }),
     controlMutationDefaults: createBuiltinLikeControlMutationDefaults(),
   });
 }
@@ -88,7 +86,7 @@ describe('interpretPslDocumentToSqlContract value-object storage', () => {
     });
 
     it('stores value-object fields in the storage type the sqlite target declares', () => {
-      const result = interpretPslDocumentToSqlContract({
+      const result = interpretSqlContract(userWithAddresses, {
         target: sqliteTarget,
         scalarColumnDescriptors: sqliteScalarColumnDescriptors,
         authoringContributions: {
@@ -99,7 +97,6 @@ describe('interpretPslDocumentToSqlContract value-object storage', () => {
         createNamespace: createTestSqlNamespace,
         dataTypes: fixtureDataTypeSupport,
         capabilities: { sql: {} },
-        ...symbolTableInputFromParseArgs({ schema: userWithAddresses, sourceId: 'schema.prisma' }),
         controlMutationDefaults: createBuiltinLikeControlMutationDefaults(),
       });
 

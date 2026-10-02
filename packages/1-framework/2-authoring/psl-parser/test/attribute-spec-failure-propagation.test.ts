@@ -5,13 +5,13 @@ import { oneOf } from '../src/attribute-spec/combinators/one-of';
 import { record } from '../src/attribute-spec/combinators/record';
 import { interpretAttribute } from '../src/attribute-spec/interpret';
 import { modelAttribute } from '../src/attribute-spec/model-attribute';
-import { EMPTY_DATA_TYPES } from '../src/attribute-spec/spec-context';
 import type { ArgType, ModelAttributeCtx } from '../src/attribute-spec/types';
 import { createBinder } from '../src/binder';
 import type { PslDiagnostic } from '../src/diagnostic';
 import { parse } from '../src/parse';
 import { PslSources } from '../src/source-file';
 import { buildSymbolTable, type ModelSymbol } from '../src/symbol-table';
+import { binderContext } from './support';
 
 const silent: ArgType<string, ModelAttributeCtx> = {
   kind: 'fieldRef',
@@ -31,10 +31,7 @@ function build(text: string) {
   const { binder } = createBinder({
     sources,
     symbolTable,
-    typeConstructors: {},
-    attributeSpecs: { model: {}, field: {} },
-    defaultFunctionRegistry: new Map(),
-    dataTypes: EMPTY_DATA_TYPES,
+    context: binderContext(),
   });
   return { sources, model, binder, symbolTable };
 }

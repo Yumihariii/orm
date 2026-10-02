@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
-import { interpretPslDocumentToSqlContract } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createBuiltinLikeControlMutationDefaults,
+  interpretSqlContract,
   postgresCodecLookup,
   postgresScalarAuthoringTypes,
   postgresScalarTypeDescriptors,
   postgresTarget,
-  symbolTableInputFromParseArgs,
   testEnumEntityContributions,
   testEnumPslBlockDescriptor,
 } from './fixtures';
@@ -66,7 +65,7 @@ model User {
   id Int @id
 ${fields}
 }`;
-  const result = interpretPslDocumentToSqlContract({
+  const result = interpretSqlContract(schema, {
     target: postgresTarget,
     scalarColumnDescriptors: postgresScalarTypeDescriptors,
     authoringContributions: {
@@ -81,7 +80,6 @@ ${fields}
     createNamespace: createTestSqlNamespace,
     dataTypes: fixtureDataTypeSupport,
     capabilities: { sql: { scalarList: true } },
-    ...symbolTableInputFromParseArgs({ schema, sourceId: 'schema.prisma' }),
     controlMutationDefaults: createBuiltinLikeControlMutationDefaults(),
   });
   const lines = schema.split('\n');

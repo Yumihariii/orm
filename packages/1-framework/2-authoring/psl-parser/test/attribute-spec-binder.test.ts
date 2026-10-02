@@ -8,12 +8,12 @@ import { fieldAttribute } from '../src/attribute-spec/field-attribute';
 import { interpretAttribute } from '../src/attribute-spec/interpret';
 import { modelAttribute } from '../src/attribute-spec/model-attribute';
 import { optional } from '../src/attribute-spec/optional';
-import { EMPTY_DATA_TYPES } from '../src/attribute-spec/spec-context';
 import { createBinder } from '../src/binder';
 import { parse } from '../src/parse';
 import { PslSources } from '../src/source-file';
 import { buildSymbolTable, type FieldSymbol, type ModelSymbol } from '../src/symbol-table';
 import type { FieldAttributeAst, ModelAttributeAst } from '../src/syntax/ast/attributes';
+import { binderContext } from './support';
 
 const TYPE_CONSTRUCTORS: AuthoringTypeNamespace = {
   Int: { kind: 'typeConstructor', output: { codecId: 'fixture/scalar@1', nativeType: 'integer' } },
@@ -60,10 +60,10 @@ function bind(text: string) {
   const { binder, diagnostics } = createBinder({
     sources,
     symbolTable,
-    typeConstructors: TYPE_CONSTRUCTORS,
-    attributeSpecs: ATTRIBUTE_SPECS,
-    defaultFunctionRegistry: new Map(),
-    dataTypes: EMPTY_DATA_TYPES,
+    context: binderContext({
+      contributedTypes: TYPE_CONSTRUCTORS,
+      attributeSpecs: ATTRIBUTE_SPECS,
+    }),
   });
   return { sources, symbolTable, binder, binderDiagnostics: diagnostics };
 }
