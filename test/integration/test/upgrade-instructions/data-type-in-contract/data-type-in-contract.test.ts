@@ -142,6 +142,23 @@ describe('migrations outside a directory named migrations', () => {
   }
 });
 
+describe('a SQLite project with enums typed by integer codecs', () => {
+  it('rewrites their value sets, domain members and defaults as digit text', () => {
+    const run = upgrade('sqlite-integer-enums');
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(run.root),
+    }).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      tree: expectedTree('sqlite-integer-enums', 'after'),
+    });
+  });
+});
+
 describe('an extension package', () => {
   it('rewrites the contract space with the extension copy of the script', () => {
     const run = upgrade('extension-package', 'before', extensionScript);

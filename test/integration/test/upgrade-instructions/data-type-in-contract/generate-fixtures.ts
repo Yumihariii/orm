@@ -19,6 +19,7 @@ interface ColumnSpec {
   readonly nullable: boolean;
   readonly typeParams?: JsonObject;
   readonly typeRef?: string;
+  readonly valueSet?: string;
   readonly functionDefault?: string;
   readonly literalDefault?: {
     readonly old: Json;
@@ -36,10 +37,23 @@ interface TypeSpec {
   readonly typeParams?: JsonObject;
 }
 
+interface EnumSpec {
+  readonly name: string;
+  readonly codecId: string;
+  readonly members: readonly {
+    readonly name: string;
+    readonly old: Json;
+    readonly new: Json;
+    readonly oldTs: string;
+    readonly newTs: string;
+  }[];
+}
+
 interface ContractSpec {
   readonly target: 'postgres' | 'sqlite' | 'acme';
   readonly tables: Readonly<Record<string, readonly ColumnSpec[]>>;
   readonly types?: readonly TypeSpec[];
+  readonly enums?: readonly EnumSpec[];
   readonly extensions?: (format: Format) => JsonObject;
   readonly layout?: 'entries' | 'tables';
 }
@@ -66,6 +80,13 @@ function columnJson(column: ColumnSpec, format: Format): JsonObject {
   };
   if (column.typeParams) value['typeParams'] = column.typeParams;
   if (column.typeRef) value['typeRef'] = column.typeRef;
+  if (column.valueSet)
+    value['valueSet'] = {
+      plane: 'storage',
+      entityKind: 'valueSet',
+      namespaceId: 'public',
+      entityName: column.valueSet,
+    };
   if (column.functionDefault)
     value['default'] = { kind: 'function', expression: column.functionDefault };
   if (column.literalDefault)
@@ -92,7 +113,22 @@ function storageJson(spec: ContractSpec, format: Format): Record<string, Json> {
       : {
           id: 'public',
           kind: `${spec.target}-schema`,
-          entries: { table: tables },
+          entries: {
+            table: tables,
+            ...(spec.enums
+              ? {
+                  valueSet: Object.fromEntries(
+                    spec.enums.map((enumSpec) => [
+                      enumSpec.name,
+                      {
+                        kind: 'valueSet',
+                        values: enumSpec.members.map((member) => member[format]),
+                      },
+                    ]),
+                  ),
+                }
+              : {}),
+          },
         };
   const storage: Record<string, Json> = { namespaces: { public: namespace } };
   if (spec.types) {
@@ -126,7 +162,29 @@ function contractObject(spec: ContractSpec, format: Format, storageHash: string)
     target: spec.target,
     profileHash: PROFILE_HASH,
     roots: {},
-    domain: { namespaces: { public: { models: {} } } },
+    domain: {
+      namespaces: {
+        public: {
+          models: {},
+          ...(spec.enums
+            ? {
+                enum: Object.fromEntries(
+                  spec.enums.map((enumSpec) => [
+                    enumSpec.name,
+                    {
+                      codecId: enumSpec.codecId,
+                      members: enumSpec.members.map((member) => ({
+                        name: member.name,
+                        value: member[format],
+                      })),
+                    },
+                  ]),
+                ),
+              }
+            : {}),
+        },
+      },
+    },
     storage: { ...storageJson(spec, format), storageHash },
     capabilities: { sql: { returning: true } },
     extensions: spec.extensions?.(format) ?? {},
@@ -185,6 +243,10 @@ function dtsColumn(column: ColumnSpec, format: Format, indent: string): string {
     lines.push(`${indent}  readonly typeParams: { ${params} };`);
   }
   if (column.typeRef) lines.push(`${indent}  readonly typeRef: '${column.typeRef}';`);
+  if (column.valueSet)
+    lines.push(
+      `${indent}  readonly valueSet: { readonly plane: 'storage'; readonly entityKind: 'valueSet'; readonly namespaceId: 'public'; readonly entityName: '${column.valueSet}' };`,
+    );
   lines.push(`${indent}};`);
   return lines.join('\n');
 }
@@ -245,16 +307,57 @@ function contractDts(spec: ContractSpec, format: Format, storageHash: string): s
     '          readonly table: {',
     tables,
     '          };',
+    ...(spec.enums ? valueSetDts(spec.enums, format) : []),
     '        };',
     '      };',
     '    };',
     ...types,
     '    readonly storageHash: StorageHash;',
     '  };',
+    ...(spec.enums ? domainEnumDts(spec.enums, format) : []),
     ...(spec.extensions ? extensionsDts(format) : []),
     '};',
     '',
   ].join('\n');
+}
+
+function valueSetDts(enums: readonly EnumSpec[], format: Format): string[] {
+  return [
+    '          readonly valueSet: {',
+    ...enums.flatMap((enumSpec) => [
+      `            readonly ${enumSpec.name}: {`,
+      "              readonly kind: 'valueSet';",
+      `              readonly values: readonly [${enumSpec.members
+        .map((member) => (format === 'old' ? member.oldTs : member.newTs))
+        .join(', ')}];`,
+      '            };',
+    ]),
+    '          };',
+  ];
+}
+
+function domainEnumDts(enums: readonly EnumSpec[], format: Format): string[] {
+  return [
+    '  readonly domain: {',
+    '    readonly namespaces: {',
+    '      readonly public: {',
+    '        readonly enum: {',
+    ...enums.flatMap((enumSpec) => [
+      `          readonly ${enumSpec.name}: {`,
+      `            readonly codecId: '${enumSpec.codecId}';`,
+      '            readonly members: readonly [',
+      ...enumSpec.members.map(
+        (member) =>
+          `              { readonly name: '${member.name}'; readonly value: ${format === 'old' ? member.oldTs : member.newTs} },`,
+      ),
+      '            ];',
+      '          };',
+    ]),
+    '        };',
+    '      };',
+    '    };',
+    '  };',
+  ];
 }
 
 function extensionsDts(format: Format): string[] {
@@ -685,6 +788,75 @@ function sqliteDefaults(format: Format): Record<string, string> {
   };
 }
 
+const integerMember = (name: string, value: number) => ({
+  name,
+  old: value,
+  new: String(value),
+  oldTs: String(value),
+  newTs: `'${value}'`,
+});
+
+const sqliteEnums: ContractSpec = {
+  target: 'sqlite',
+  tables: {
+    post: [
+      {
+        name: 'id',
+        codecId: 'sqlite/integer@1',
+        nativeType: 'integer',
+        dataType: 'sqlite/integer',
+        nullable: false,
+      },
+      {
+        name: 'priority',
+        codecId: 'sqlite/integer@1',
+        nativeType: 'integer',
+        dataType: 'sqlite/integer',
+        nullable: false,
+        valueSet: 'Priority',
+        literalDefault: { old: 1, new: '1', oldTs: '1', newTs: "'1'" },
+      },
+      {
+        name: 'level',
+        codecId: 'sql/int@1',
+        nativeType: 'integer',
+        dataType: 'sqlite/integer',
+        nullable: true,
+        valueSet: 'Level',
+      },
+      {
+        name: 'mood',
+        codecId: 'sqlite/text@1',
+        nativeType: 'text',
+        dataType: 'sqlite/text',
+        nullable: true,
+        valueSet: 'Mood',
+      },
+    ],
+  },
+  enums: [
+    {
+      name: 'Level',
+      codecId: 'sql/int@1',
+      members: [integerMember('Debug', -1), integerMember('Info', 0)],
+    },
+    {
+      name: 'Mood',
+      codecId: 'sqlite/text@1',
+      members: [{ name: 'Calm', old: 'calm', new: 'calm', oldTs: "'calm'", newTs: "'calm'" }],
+    },
+    {
+      name: 'Priority',
+      codecId: 'sqlite/integer@1',
+      members: [integerMember('Low', 1), integerMember('High', 2)],
+    },
+  ],
+};
+
+function sqliteIntegerEnums(format: Format): Record<string, string> {
+  return singleSpaceProject(sqliteEnums, format, 'prisma', 'migrations');
+}
+
 const unknownCodecSpec: ContractSpec = {
   target: 'postgres',
   tables: {
@@ -898,4 +1070,5 @@ writeCase('unknown-codec', unknownCodec);
 writeCase('unknown-target', unknownTarget);
 writeCase('db-migrations', dbMigrations);
 writeCase('two-migration-roots', twoMigrationRoots);
+writeCase('sqlite-integer-enums', sqliteIntegerEnums);
 writeUnchangedCase('snapshot-collision', snapshotCollision());

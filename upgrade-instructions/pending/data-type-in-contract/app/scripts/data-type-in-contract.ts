@@ -400,6 +400,7 @@ interface Rewrite {
   readonly changed: boolean;
   readonly unknownCodecs: readonly string[];
   readonly defaultRewrites: ReadonlyMap<string, Json>;
+  readonly integerEnums: ReadonlySet<string>;
 }
 
 function rewriteDefault(target: string, codecId: string, value: JsonRecord): JsonRecord {
@@ -417,6 +418,125 @@ function rewriteDefault(target: string, codecId: string, value: JsonRecord): Jso
   )
     return { ...value, default: { ...defaultValue, value: BigInt(literal).toString() } };
   return value;
+}
+
+function digitText(value: Json): Json {
+  return typeof value === 'number' && Number.isInteger(value) ? BigInt(value).toString() : value;
+}
+
+function mapRecord(value: Json, map: (key: string, child: Json) => Json): Json {
+  if (!isRecord(value)) return value;
+  const result: JsonRecord = {};
+  for (const [key, child] of Object.entries(value)) result[key] = map(key, child);
+  return result;
+}
+
+function enumKey(namespaceId: string, name: string): string {
+  return `${namespaceId}\u0000${name}`;
+}
+
+/**
+ * On SQLite the integer codecs store digit text, so the members of an enum typed by one, in the
+ * domain and in the storage value set its columns name, become digit text too.
+ */
+function rewriteSqliteIntegerEnums(contract: JsonRecord): {
+  readonly contract: JsonRecord;
+  readonly integerEnums: ReadonlySet<string>;
+} {
+  const integerEnums = new Set<string>();
+  const domainCodecs = new Map<string, string>();
+  const domain = mapRecord(contract['domain'] ?? null, (key, namespaces) =>
+    key !== 'namespaces'
+      ? namespaces
+      : mapRecord(namespaces, (namespaceId, namespace) =>
+          mapRecord(namespace, (kind, enums) =>
+            kind !== 'enum'
+              ? enums
+              : mapRecord(enums, (name, enumType) => {
+                  const codecId = isRecord(enumType) ? enumType['codecId'] : undefined;
+                  if (typeof codecId === 'string')
+                    domainCodecs.set(enumKey(namespaceId, name), codecId);
+                  if (
+                    !isRecord(enumType) ||
+                    typeof codecId !== 'string' ||
+                    !SQLITE_INTEGER_CODECS.has(codecId)
+                  )
+                    return enumType;
+                  const members = enumType['members'];
+                  if (!Array.isArray(members)) return enumType;
+                  integerEnums.add(enumKey(namespaceId, name));
+                  return {
+                    ...enumType,
+                    members: members.map((member) =>
+                      isRecord(member) && member['value'] !== undefined
+                        ? { ...member, value: digitText(member['value']) }
+                        : member,
+                    ),
+                  };
+                }),
+          ),
+        ),
+  );
+
+  const columnCodecs = new Map<string, string>();
+  const storage = contract['storage'];
+  const namespaces = isRecord(storage) ? storage['namespaces'] : undefined;
+  for (const namespace of isRecord(namespaces) ? Object.values(namespaces) : []) {
+    const entries = isRecord(namespace) ? namespace['entries'] : undefined;
+    const tables = isRecord(entries) ? entries['table'] : undefined;
+    for (const table of isRecord(tables) ? Object.values(tables) : []) {
+      const columns = isRecord(table) ? table['columns'] : undefined;
+      for (const column of isRecord(columns) ? Object.values(columns) : []) {
+        const valueSet = isRecord(column) ? column['valueSet'] : undefined;
+        const codecId = isRecord(column) ? column['codecId'] : undefined;
+        if (
+          isRecord(valueSet) &&
+          typeof valueSet['namespaceId'] === 'string' &&
+          typeof valueSet['entityName'] === 'string' &&
+          typeof codecId === 'string'
+        )
+          columnCodecs.set(enumKey(valueSet['namespaceId'], valueSet['entityName']), codecId);
+      }
+    }
+  }
+
+  const nextStorage = mapRecord(storage ?? null, (key, storageNamespaces) =>
+    key !== 'namespaces'
+      ? storageNamespaces
+      : mapRecord(storageNamespaces, (namespaceId, namespace) =>
+          mapRecord(namespace, (namespaceKey, entries) =>
+            namespaceKey !== 'entries'
+              ? entries
+              : mapRecord(entries, (entryKind, valueSets) =>
+                  entryKind !== 'valueSet'
+                    ? valueSets
+                    : mapRecord(valueSets, (name, valueSet) => {
+                        const key = enumKey(namespaceId, name);
+                        const codecId = columnCodecs.get(key) ?? domainCodecs.get(key);
+                        const values = isRecord(valueSet) ? valueSet['values'] : undefined;
+                        if (
+                          codecId === undefined ||
+                          !SQLITE_INTEGER_CODECS.has(codecId) ||
+                          !isRecord(valueSet) ||
+                          !Array.isArray(values)
+                        )
+                          return valueSet;
+                        integerEnums.add(key);
+                        return { ...valueSet, values: values.map(digitText) };
+                      }),
+                ),
+          ),
+        ),
+  );
+
+  return {
+    contract: {
+      ...contract,
+      ...(contract['domain'] === undefined ? {} : { domain }),
+      ...(storage === undefined ? {} : { storage: nextStorage }),
+    },
+    integerEnums,
+  };
 }
 
 function dataTypesFor(
@@ -520,11 +640,16 @@ function rewriteContract(contract: JsonRecord, extra: ReadonlyMap<string, string
     }
     rewritten['extensions'] = nextExtensions;
   }
+  const enums =
+    target === 'sqlite' && changed
+      ? rewriteSqliteIntegerEnums(rewritten)
+      : { contract: rewritten, integerEnums: new Set<string>() };
   return {
-    contract: rewritten,
+    contract: enums.contract,
     changed,
     unknownCodecs: [...unknownCodecs].sort(compareCodeUnits),
     defaultRewrites,
+    integerEnums: enums.integerEnums,
   };
 }
 
@@ -672,11 +797,16 @@ function memberRemoval(
   return { start, end: start + length + (after?.[0].length ?? 0), text: '' };
 }
 
+function quoteIntegers(text: string): string {
+  return text.replace(/(?<![\w'".-])-?\d+(?![\w'".])/g, (digits: string) => `'${BigInt(digits)}'`);
+}
+
 function rewriteDts(
   text: string,
   target: string,
   extra: ReadonlyMap<string, string>,
   defaultRewrites: ReadonlyMap<string, Json>,
+  integerEnums: ReadonlySet<string>,
   hashes: ReadonlyMap<string, string>,
 ): string {
   const table = dataTypesFor(target, extra);
@@ -714,6 +844,40 @@ function rewriteDts(
     edits.push({ start: argumentStart, end: trimmedEnd, text: typeLiteral(value) });
   }
 
+  for (const match of text.matchAll(/readonly values: readonly \[([^\]]*)\]/g)) {
+    const valueSet = innermostBlock(blocks, match.index);
+    const kind = valueSet?.parent;
+    const namespace = kind?.parent?.parent;
+    if (
+      valueSet === undefined ||
+      kind?.label !== 'valueSet' ||
+      kind.parent?.label !== 'entries' ||
+      namespace === undefined ||
+      !integerEnums.has(enumKey(namespace.label, valueSet.label))
+    )
+      continue;
+    const values = match[1] ?? '';
+    const start = match.index + match[0].length - values.length - 1;
+    edits.push({ start, end: start + values.length, text: quoteIntegers(values) });
+  }
+
+  for (const match of text.matchAll(/readonly value: (-?\d+)(?=\s*[;},])/g)) {
+    const member = innermostBlock(blocks, match.index);
+    const enumType = member?.parent;
+    const namespace = enumType?.parent?.parent;
+    const digits = match[1] ?? '';
+    if (
+      member === undefined ||
+      member.label !== '' ||
+      enumType?.parent?.label !== 'enum' ||
+      namespace === undefined ||
+      !integerEnums.has(enumKey(namespace.label, enumType.label))
+    )
+      continue;
+    const start = match.index + match[0].length - digits.length;
+    edits.push({ start, end: start + digits.length, text: quoteIntegers(digits) });
+  }
+
   for (const match of text.matchAll(/(['"])([0-9a-f]{64})\1/g)) {
     const hash = match[2];
     const next = hash === undefined ? undefined : hashes.get(hash);
@@ -746,6 +910,7 @@ interface ContractPlan {
   readonly content: string;
   readonly target: string;
   readonly defaultRewrites: ReadonlyMap<string, Json>;
+  readonly integerEnums: ReadonlySet<string>;
 }
 
 function readDirectory(dir: string): Map<string, string> {
@@ -837,6 +1002,7 @@ function main({ root, dataTypes, errors }: Options): number {
       content: snapshot ? snapshotForm(contractWithHash) : emittedForm(contractWithHash, text),
       target: contract['target'],
       defaultRewrites: rewrite.defaultRewrites,
+      integerEnums: rewrite.integerEnums,
     });
   }
 
@@ -872,6 +1038,7 @@ function main({ root, dataTypes, errors }: Options): number {
           plan.target,
           dataTypes,
           plan.defaultRewrites,
+          plan.integerEnums,
           dtsHashes,
         )
       : undefined;
