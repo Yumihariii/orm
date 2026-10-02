@@ -1291,7 +1291,6 @@ See `.cursor/rules/config-validation-and-normalization.mdc` for detailed pattern
     - **`types`**: Type import specs and type IDs contributed by the component. Common examples:
       - `types.codecTypes.import`: Where to import codec type mappings for `contract.d.ts`.
       - `types.queryOperationTypes.import`: Where to import flat query-builder operation type signatures for `contract.d.ts` (adapters/extensions).
-      - `types.storage`: Storage type bindings (`typeId`, `familyId`, `targetId`) used in authoring/emission.
     - **`operations`**: Operation signatures the component contributes (extensions), used for type generation and (optionally) validation/lowering.
     - **Component-specific metadata**:
       - Extensions may also include control-plane-only metadata like `contractSpace` (used by verify, planning, and migration flows and not required at runtime).

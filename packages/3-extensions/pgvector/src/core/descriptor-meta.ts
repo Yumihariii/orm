@@ -101,7 +101,6 @@ const pgvectorPackMetaBase = {
         alias: 'PgVectorQueryOperationTypes',
       },
     },
-    storage: [{ typeId: pgvectorTypeId, familyId: 'sql', targetId: 'postgres' }],
   },
 } as const;
 

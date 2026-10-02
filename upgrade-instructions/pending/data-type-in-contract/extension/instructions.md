@@ -15,8 +15,9 @@ changes:
     script: ./scripts/data-type-in-contract.ts
   - id: column-descriptors-drop-native-type
     summary: |
-      `ColumnTypeDescriptor`, `StorageTypeMetadata` and authored `storage.types` entries lose
-      `nativeType`, `column()` loses its fourth argument, and a codec descriptor's
+      `ColumnTypeDescriptor` and authored `storage.types` entries lose `nativeType`, the pack
+      metadata loses its `types.storage` list and `StorageTypeMetadata` is deleted, `column()`
+      loses its fourth argument, and a codec descriptor's
       `columnFromEntity` returns `{ typeParams }` only. The contract takes a column's data type from
       its codec. A `types` constraint over what `type.*` helpers return is
       `Record<string, AuthoredStorageType>` instead of `Record<string, StorageTypeInstance>`.
@@ -29,6 +30,8 @@ changes:
         - '(?<![\w$.])column\s*\((?:[^()]|\([^()]*\))*,(?:[^()]|\([^()]*\))*,(?:[^()]|\([^()]*\))*,\s*[\w''"](?:[^()]|\([^()]*\))*\)'
         - '\bRecord\s*<\s*string\s*,\s*StorageTypeInstance\s*>'
         - '\bStorageTypeInstanceInput\b'
+        - '\bStorageTypeMetadata\b'
+        - '\bstorage\s*:\s*\[\s*\{\s*typeId\b'
   - id: default-renderer-receives-data-type
     summary: |
       `DefaultRenderer` receives a third argument, `{ dataType, baseTypeName }`: the id of the data
@@ -146,14 +149,19 @@ column(pgVectorDescriptor.factory({ length }), pgVectorDescriptor.codecId, { len
 column(pgVectorDescriptor.factory({ length }), pgVectorDescriptor.codecId, { length });
 ```
 
-Delete `nativeType` from each `types.storage[]` entry of the pack metadata (`StorageTypeMetadata`):
+Delete the `storage` list from the pack metadata's `types`: nothing reads it, and `StorageTypeMetadata`, its type, is deleted from `@internal/sql-contract/pack-types`. Contracts no longer carry `extensions.<pack>.types.storage`; the script removes it from yours.
 
 ```ts
 // before
-storage: [{ typeId: pgvectorTypeId, familyId: 'sql', targetId: 'postgres', nativeType: 'vector' }],
+types: {
+  codecTypes: { import: { package: '@acme/pack/codec-types', named: 'CodecTypes', alias: 'AcmeTypes' } },
+  storage: [{ typeId: pgvectorTypeId, familyId: 'sql', targetId: 'postgres', nativeType: 'vector' }],
+},
 
 // after
-storage: [{ typeId: pgvectorTypeId, familyId: 'sql', targetId: 'postgres' }],
+types: {
+  codecTypes: { import: { package: '@acme/pack/codec-types', named: 'CodecTypes', alias: 'AcmeTypes' } },
+},
 ```
 
 Delete `nativeType` from each `storage.types` entry of the contract space's source (`src/contract.ts`):

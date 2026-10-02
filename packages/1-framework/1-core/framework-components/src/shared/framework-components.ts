@@ -48,11 +48,6 @@ export interface ComponentMetadata {
      */
     readonly aggregateDescriptors?: ReadonlyArray<AggregateDescriptor>;
     readonly queryOperationTypes?: { readonly import: TypesImportSpec };
-    readonly storage?: ReadonlyArray<{
-      readonly typeId: string;
-      readonly familyId: string;
-      readonly targetId: string;
-    }>;
   };
 
   /**
