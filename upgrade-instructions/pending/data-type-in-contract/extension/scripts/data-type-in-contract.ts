@@ -816,13 +816,14 @@ function main({ root, dataTypes, errors }: Options): number {
     const dtsPath = plan.snapshot
       ? join(dirname(plan.path), 'contract.d.ts')
       : `${plan.path.slice(0, -'.json'.length)}.d.ts`;
+    const dtsHashes = plan.snapshot ? hashes : new Map([...hashes, [plan.oldHash, plan.newHash]]);
     const dts = existsSync(dtsPath)
       ? rewriteDts(
           readFileSync(dtsPath, 'utf8'),
           plan.target,
           dataTypes,
           plan.defaultRewrites,
-          hashes,
+          dtsHashes,
         )
       : undefined;
     if (!plan.snapshot) {

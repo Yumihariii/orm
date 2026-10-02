@@ -342,6 +342,30 @@ describe('a snapshot whose stored hash does not recompute', () => {
   });
 });
 
+describe('an emitted contract edited by hand after its last snapshot', () => {
+  it('writes the same new storage hash into contract.json and contract.d.ts', () => {
+    const root = copyFixture('postgres-extension-space', 'before');
+    const path = join(root, 'prisma/contract.json');
+    const contract = JSON.parse(readFileSync(path, 'utf8'));
+    contract.storage.namespaces.public.entries.table.post.columns.note = {
+      codecId: 'pg/text@1',
+      nativeType: 'text',
+      nullable: true,
+    };
+    writeFileSync(path, JSON.stringify(contract, null, 2));
+    const run = runScript(root);
+    const upgraded = JSON.parse(readFileSync(path, 'utf8'));
+    const dtsHash = /StorageHashBase<'([0-9a-f]{64})'>/.exec(
+      readFileSync(join(root, 'prisma/contract.d.ts'), 'utf8'),
+    )?.[1];
+    expect({ status: run.status, stdout: run.stdout, dtsHash }).toEqual({
+      status: 0,
+      stdout: 'prisma/contract.json: stored hash did not recompute; rehashed from content\n',
+      dtsHash: upgraded.storage.storageHash,
+    });
+  });
+});
+
 describe('the project root', () => {
   it('defaults to the working directory', () => {
     const root = copyFixture('sqlite-defaults', 'before');
