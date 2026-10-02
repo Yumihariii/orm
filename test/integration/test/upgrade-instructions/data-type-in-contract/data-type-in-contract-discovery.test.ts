@@ -7,16 +7,36 @@ import {
   copyFixture,
   expectedTree,
   makeWorkDir,
+  POSTGRES_EXTENSION_SPACE_SUMMARY,
   type Run,
   readTree,
   removeWorkDirs,
   runScript,
   upgrade,
+  upgradeSummary,
 } from './test-helpers';
 
 afterAll(removeWorkDirs);
 
 describe('migrations outside a directory named migrations', () => {
+  const summaries: Record<string, string> = {
+    'db-migrations': upgradeSummary('Rewrote 5 files and renamed 1 snapshot directory.', [
+      [
+        '55ea5bec09638773a4537b126c44a94c3c7714adacbc44298605dcf6d850c201',
+        'd3a277a78b83a532f1ce006d0b7b5e059cc9d15a440922acd9df1055156afbf2',
+      ],
+    ]),
+    'two-migration-roots': upgradeSummary('Rewrote 10 files and renamed 2 snapshot directories.', [
+      [
+        '3fa48ebe1f86cf8587c9887b33f8fd0b38caf19703ca83aa25657456e12bd675',
+        '7b90ed66186d9fc6824cca0d0cc7b957bb47de724164cfe891ea0b8477641664',
+      ],
+      [
+        '55ea5bec09638773a4537b126c44a94c3c7714adacbc44298605dcf6d850c201',
+        'd3a277a78b83a532f1ce006d0b7b5e059cc9d15a440922acd9df1055156afbf2',
+      ],
+    ]),
+  };
   for (const name of ['db-migrations', 'two-migration-roots']) {
     it(`upgrades ${name}`, () => {
       const run = upgrade(name);
@@ -25,14 +45,19 @@ describe('migrations outside a directory named migrations', () => {
         stdout: run.stdout,
         stderr: run.stderr,
         tree: readTree(run.root),
-      }).toEqual({ status: 0, stdout: '', stderr: '', tree: expectedTree(name, 'after') });
+      }).toEqual({
+        status: 0,
+        stdout: summaries[name],
+        stderr: '',
+        tree: expectedTree(name, 'after'),
+      });
     });
   }
 });
 
 describe('a project whose directories are symbolic links', () => {
   const name = 'postgres-extension-space';
-  const upgraded = { status: 0, stdout: '', stderr: '' };
+  const upgraded = { status: 0, stdout: POSTGRES_EXTENSION_SPACE_SUMMARY, stderr: '' };
   const outcome = (run: Run, tree: Record<string, string>) => ({
     status: run.status,
     stdout: run.stdout,

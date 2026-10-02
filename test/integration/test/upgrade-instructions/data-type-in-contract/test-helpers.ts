@@ -66,3 +66,34 @@ export function upgrade(
 export function expectedTree(name: string, side: 'before' | 'after'): Record<string, string> {
   return readTree(join(fixtures, name, side));
 }
+
+export const ALREADY_IN_NEW_FORMAT = 'The project is already in the new format; nothing changed.\n';
+
+export function upgradeSummary(
+  counts: string,
+  hashes: readonly (readonly [string, string])[],
+): string {
+  return [
+    `${counts} Storage hashes changed (old -> new):`,
+    ...hashes.map(([oldHash, newHash]) => `  ${oldHash} -> ${newHash}`),
+    '',
+  ].join('\n');
+}
+
+export const POSTGRES_EXTENSION_SPACE_SUMMARY = upgradeSummary(
+  'Rewrote 10 files and renamed 3 snapshot directories.',
+  [
+    [
+      '3d2c56a2944685bd21b05bc8a8d73164397df51c014201902932fbe7e80ff1b8',
+      '4a96b488a4ce92b434e5f7d6607b6435c0955f0d36b0018077045787764240e6',
+    ],
+    [
+      'eb71bcdad05720d5faa9c875ab24d8e7247fcc24dbc9294d70d170808768f871',
+      '99239f90bc2b6bb170c23be0fc3d2b7931e14211777db6d086f3301be62f707b',
+    ],
+    [
+      'ffcb5620e06a06ea2c6dad025087d882406fe4c66a282dbda185b6d54638b155',
+      'ab03042a26032f51c0dc4a04e19d96ece877f22a1e876f238327cb21f480d703',
+    ],
+  ],
+);

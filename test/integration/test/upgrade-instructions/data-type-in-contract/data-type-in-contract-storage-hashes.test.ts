@@ -5,10 +5,12 @@ import {
   copyFixture,
   expectedTree,
   extensionScript,
+  POSTGRES_EXTENSION_SPACE_SUMMARY,
   readTree,
   removeWorkDirs,
   runScript,
   upgrade,
+  upgradeSummary,
 } from './test-helpers';
 
 afterAll(removeWorkDirs);
@@ -66,7 +68,12 @@ describe('a snapshot directory that already holds the new hash', () => {
       tree: readTree(run.root),
     }).toEqual({
       status: 0,
-      stdout: '',
+      stdout: upgradeSummary('Rewrote 1 file and renamed 1 snapshot directory.', [
+        [
+          '55ea5bec09638773a4537b126c44a94c3c7714adacbc44298605dcf6d850c201',
+          'd3a277a78b83a532f1ce006d0b7b5e059cc9d15a440922acd9df1055156afbf2',
+        ],
+      ]),
       stderr: '',
       tree: expectedTree('snapshot-already-present', 'after'),
     });
@@ -75,6 +82,7 @@ describe('a snapshot directory that already holds the new hash', () => {
 
 describe('a snapshot whose stored hash does not recompute', () => {
   it('rehashes it from content, says so and rewrites everything that names it', () => {
+    const stale = 'a'.repeat(64);
     const run = upgrade('stale-hash');
     expect({
       status: run.status,
@@ -83,7 +91,12 @@ describe('a snapshot whose stored hash does not recompute', () => {
       tree: readTree(run.root),
     }).toEqual({
       status: 0,
-      stdout: `migrations/snapshots/${'a'.repeat(64)}/contract.json: stored hash did not recompute; rehashed from content\n`,
+      stdout: [
+        `migrations/snapshots/${stale}/contract.json: stored hash did not recompute; rehashed from content\n`,
+        upgradeSummary('Rewrote 3 files and renamed 1 snapshot directory.', [
+          [stale, 'a9cae1d6a356a52a11343d60bde0357c78701cfce9fdae926f29c9e2c19b1a04'],
+        ]),
+      ].join(''),
       stderr: '',
       tree: expectedTree('stale-hash', 'after'),
     });
@@ -108,7 +121,7 @@ describe('an emitted contract edited by hand after its last snapshot', () => {
     )?.[1];
     expect({ status: run.status, stdout: run.stdout, dtsHash }).toEqual({
       status: 0,
-      stdout: 'prisma/contract.json: stored hash did not recompute; rehashed from content\n',
+      stdout: `prisma/contract.json: stored hash did not recompute; rehashed from content\n${POSTGRES_EXTENSION_SPACE_SUMMARY}`,
       dtsHash: upgraded.storage.storageHash,
     });
   });

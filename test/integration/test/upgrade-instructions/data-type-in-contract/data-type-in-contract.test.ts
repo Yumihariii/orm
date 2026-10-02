@@ -2,15 +2,18 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'pathe';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  ALREADY_IN_NEW_FORMAT,
   appScript,
   copyFixture,
   expectedTree,
   extensionScript,
+  POSTGRES_EXTENSION_SPACE_SUMMARY,
   type Run,
   readTree,
   removeWorkDirs,
   runScript,
   upgrade,
+  upgradeSummary,
 } from './test-helpers';
 
 afterAll(removeWorkDirs);
@@ -20,10 +23,10 @@ describe('a Postgres project with an extension space and three snapshots', () =>
   const tree = readTree(run.root);
   const expected = expectedTree('postgres-extension-space', 'after');
 
-  it('exits 0 without output', () => {
+  it('exits 0 and prints the files, snapshot directories and storage hashes it changed', () => {
     expect({ status: run.status, stdout: run.stdout, stderr: run.stderr }).toEqual({
       status: 0,
-      stdout: '',
+      stdout: POSTGRES_EXTENSION_SPACE_SUMMARY,
       stderr: '',
     });
   });
@@ -68,7 +71,12 @@ describe('a SQLite project with literal defaults', () => {
       tree: readTree(run.root),
     }).toEqual({
       status: 0,
-      stdout: '',
+      stdout: upgradeSummary('Rewrote 5 files and renamed 1 snapshot directory.', [
+        [
+          '4f20c9f9047b394c4018e94a5e6538e6b4bd30b46604c73d84a4bbd3c12b5b8e',
+          '9df4e74652f749c2f4006615728f0bf1b589cb7b30a4159211c4661d0af93109',
+        ],
+      ]),
       stderr: '',
       tree: expectedTree('sqlite-defaults', 'after'),
     });
@@ -96,7 +104,7 @@ describe('a JSON column whose default document holds codecId and nativeType', ()
   it('leaves a new-format contract unchanged', () => {
     expect(outcome(upgrade('json-default-document', 'after'))).toEqual({
       status: 0,
-      stdout: '',
+      stdout: ALREADY_IN_NEW_FORMAT,
       stderr: '',
       tree: expectedTree('json-default-document', 'after'),
       document,
@@ -107,7 +115,12 @@ describe('a JSON column whose default document holds codecId and nativeType', ()
   it('rewrites the column of an old-format contract and leaves the document as it was', () => {
     expect(outcome(upgrade('json-default-document'))).toEqual({
       status: 0,
-      stdout: '',
+      stdout: upgradeSummary('Rewrote 2 files and renamed 0 snapshot directories.', [
+        [
+          '9badeaec2e56b0e1a85e575799922686ce1915f9087c2d37714def6a92740843',
+          'f75e65cd3aace02feb0fdc58bae71be31a681f1728b73c2f05f32ff569a5c934',
+        ],
+      ]),
       stderr: '',
       tree: expectedTree('json-default-document', 'after'),
       document,
@@ -126,7 +139,12 @@ describe('a SQLite project with enums typed by integer codecs', () => {
       tree: readTree(run.root),
     }).toEqual({
       status: 0,
-      stdout: '',
+      stdout: upgradeSummary('Rewrote 5 files and renamed 1 snapshot directory.', [
+        [
+          '73264bd00bf86a4bb8a0a329d31d577149a05b9a267fe7679df22aaa2b7e8dbe',
+          '275857ebc0d7a9b0ed6617bb8555fe85616026ac8ff4c25f2da9b67dcd768407',
+        ],
+      ]),
       stderr: '',
       tree: expectedTree('sqlite-integer-enums', 'after'),
     });
@@ -143,7 +161,12 @@ describe('an extension package', () => {
       tree: readTree(run.root),
     }).toEqual({
       status: 0,
-      stdout: '',
+      stdout: upgradeSummary('Rewrote 5 files and renamed 1 snapshot directory.', [
+        [
+          '3d2c56a2944685bd21b05bc8a8d73164397df51c014201902932fbe7e80ff1b8',
+          '4a96b488a4ce92b434e5f7d6607b6435c0955f0d36b0018077045787764240e6',
+        ],
+      ]),
       stderr: '',
       tree: expectedTree('extension-package', 'after'),
     });
@@ -163,7 +186,12 @@ describe('a project already in the new format', () => {
         stdout: run.stdout,
         stderr: run.stderr,
         tree: readTree(run.root),
-      }).toEqual({ status: 0, stdout: '', stderr: '', tree: expectedTree(name, 'after') });
+      }).toEqual({
+        status: 0,
+        stdout: ALREADY_IN_NEW_FORMAT,
+        stderr: '',
+        tree: expectedTree(name, 'after'),
+      });
     });
   }
 
@@ -185,7 +213,7 @@ describe('a project already in the new format', () => {
       tree: readTree(root),
     }).toEqual({
       status: 0,
-      stdout: '',
+      stdout: ALREADY_IN_NEW_FORMAT,
       stderr: '',
       tree: before,
     });
@@ -196,7 +224,7 @@ describe('a project already in the new format', () => {
     const second = runScript(first.root);
     expect({ status: second.status, stdout: second.stdout, tree: readTree(second.root) }).toEqual({
       status: 0,
-      stdout: '',
+      stdout: ALREADY_IN_NEW_FORMAT,
       tree: expectedTree('postgres-extension-space', 'after'),
     });
   });

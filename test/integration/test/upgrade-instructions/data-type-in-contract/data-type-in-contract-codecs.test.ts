@@ -8,6 +8,7 @@ import {
   removeWorkDirs,
   runScript,
   upgrade,
+  upgradeSummary,
 } from './test-helpers';
 
 afterAll(removeWorkDirs);
@@ -44,7 +45,12 @@ describe('a codec the script does not know', () => {
     ]);
     expect(unchanged(run)).toEqual({
       status: 0,
-      stdout: '',
+      stdout: upgradeSummary('Rewrote 3 files and renamed 1 snapshot directory.', [
+        [
+          '90ad54a8bc204f3991426b445dcc4c89a1401f51f95c3ba815fbc68fd140df97',
+          'f31f81776a87ddfcabd2ef4929e374d4249a10a8302f4cef50716bc8dad8485f',
+        ],
+      ]),
       stderr: '',
       tree: expectedTree('unknown-codec', 'after'),
     });
@@ -95,7 +101,12 @@ describe('a contract on a target the script does not know', () => {
       tree: readTree(run.root),
     }).toEqual({
       status: 0,
-      stdout: '',
+      stdout: upgradeSummary('Rewrote 3 files and renamed 1 snapshot directory.', [
+        [
+          'c8a500bce17514ecce4c3638f7e3e0447ac842502b8480d32725fdcc5141aa6d',
+          '3a6ffdf836b1e29fd2ffd8b5118ffd732a87d461bce83b11b0e4dfb4db396a0b',
+        ],
+      ]),
       stderr: '',
       tree: expectedTree('unknown-target', 'after'),
     });

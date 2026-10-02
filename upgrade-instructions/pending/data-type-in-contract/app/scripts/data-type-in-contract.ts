@@ -4,7 +4,7 @@
  * snapshot directories and rewrites every migration, ref, `migration.ts` and `contract.d.ts` that
  * names an old storage hash.
  *
- * Usage: pnpm exec tsx data-type-in-contract.ts [project-root] [--data-type <codec id>=<data type id>]...
+ * Usage: node data-type-in-contract.ts [project-root] [--data-type <codec id>=<data type id>]...
  *
  * `--data-type` names the data type of a codec the script's table does not know for a contract's
  * target, such as an extension's own codec. It cannot change the data type of a codec the table
@@ -13,7 +13,8 @@
  * The project root defaults to the working directory. The script reads and writes files only. It
  * needs no database, network or configured stack, and a project already in the new format is left
  * unchanged. When it stops (an unknown codec, or a snapshot directory that already exists with
- * different content) it changes no file, prints one line per case and exits 1.
+ * different content) it changes no file, prints one line per case and exits 1. When it finishes it
+ * prints how many files and snapshot directories it changed and each storage hash it replaced.
  *
  * The storage hash and migration hash rules are copied from `@internal/contract` and
  * `@internal/migration-tools` because a project's strict `node_modules` does not expose them.
@@ -1021,6 +1022,28 @@ function removeDirectory(dir: string): void {
   rmSync(temporary, { recursive: true, force: true });
 }
 
+function count(amount: number, singular: string, plural: string): string {
+  return `${amount} ${amount === 1 ? singular : plural}`;
+}
+
+function summary(
+  files: number,
+  directories: number,
+  hashes: ReadonlyMap<string, string>,
+): readonly string[] {
+  if (files === 0 && directories === 0)
+    return ['The project is already in the new format; nothing changed.'];
+  const renamed = count(directories, 'snapshot directory', 'snapshot directories');
+  const changes = `Rewrote ${count(files, 'file', 'files')} and renamed ${renamed}.`;
+  if (hashes.size === 0) return [changes];
+  return [
+    `${changes} Storage hashes changed (old -> new):`,
+    ...[...hashes]
+      .sort(([a], [b]) => compareCodeUnits(a, b))
+      .map(([oldHash, newHash]) => `  ${oldHash} -> ${newHash}`),
+  ];
+}
+
 const JSON_FILES_THAT_MUST_PARSE = new Set(['contract.json', 'migration.json']);
 
 function main({ root, dataTypes, errors }: Options): number {
@@ -1208,7 +1231,9 @@ function main({ root, dataTypes, errors }: Options): number {
     );
     return 1;
   }
-  if (notices.length > 0) process.stdout.write(`${notices.join('\n')}\n`);
+  const rewrittenFiles = snapshotRewrites.length + referenceWrites.size + contractWrites.size;
+  const lines = [...notices, ...summary(rewrittenFiles, removals.size, hashes)];
+  process.stdout.write(`${lines.join('\n')}\n`);
   return 0;
 }
 
