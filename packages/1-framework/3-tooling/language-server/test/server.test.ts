@@ -88,6 +88,7 @@ import { ProjectArtifacts, type ProjectArtifactsOptions } from '../src/project-a
 import { resolveSchemaInputs, type SchemaInputConfig } from '../src/schema-inputs';
 import { semanticTokensLegend } from '../src/semantic-tokens';
 import { createServer } from '../src/server';
+import { testTypeConstructors } from './helpers/binder';
 
 type ResolveInputs = (configPath: string) => Promise<ConfigResolution>;
 type FindNearestConfigPathForFile = (filePath: string) => Promise<string | undefined>;
@@ -128,6 +129,7 @@ vi.mock('../src/project-artifacts', async (importOriginal) => {
     ProjectArtifacts: vi.fn(function MockProjectArtifacts(options: ProjectArtifactsOptions) {
       const artifacts = new actual.ProjectArtifacts(options);
       artifacts.symbolDiagnostics = vi.fn(artifacts.symbolDiagnostics);
+      artifacts.binder = vi.fn(artifacts.binder);
       return artifacts;
     }),
   };
@@ -191,6 +193,7 @@ const completionAuthoringContributions = assembleAuthoringContributions([
   {
     id: 'completion-family',
     authoring: {
+      type: testTypeConstructors(scalarTypes),
       attributeSpecs: {
         field: { marker: () => markerAttribute },
         model: {},
@@ -229,7 +232,13 @@ async function resolutionForInputs(
   const resolution = {
     inputs: await resolveSchemaInputs(schemaInputConfig, alwaysMember),
     schemaInputConfig,
-    controlStack: { scalarTypes: [...scalarTypes], pslBlockDescriptors: descriptors },
+    controlStack: {
+      scalarTypes: [...scalarTypes],
+      pslBlockDescriptors: descriptors,
+      authoringContributions: assembleAuthoringContributions([
+        { id: 'scalars', authoring: { type: testTypeConstructors(scalarTypes) } },
+      ]),
+    },
   };
   return formatter === undefined ? resolution : { ...resolution, formatter };
 }
@@ -320,7 +329,13 @@ async function recursiveCompletionResolution(): Promise<ConfigResolution> {
     controlStack: {
       ...resolution.controlStack,
       authoringContributions: assembleAuthoringContributions([
-        { id: 'sql-family', authoring: { attributeSpecs: sql.sqlAttributeSpecs } },
+        {
+          id: 'sql-family',
+          authoring: {
+            type: testTypeConstructors(scalarTypes),
+            attributeSpecs: sql.sqlAttributeSpecs,
+          },
+        },
         {
           id: 'contributed-attributes',
           authoring: {
@@ -1216,7 +1231,10 @@ describe('language server', { timeout: timeouts.databaseOperation }, () => {
         authoringContributions: assembleAuthoringContributions([
           {
             id: 'broken-signature',
-            authoring: { attributeSpecs: { field: { marker: factory }, model: {} } },
+            authoring: {
+              type: testTypeConstructors(scalarTypes),
+              attributeSpecs: { field: { marker: factory }, model: {} },
+            },
           },
         ]),
       },
@@ -1270,15 +1288,16 @@ describe('language server', { timeout: timeouts.databaseOperation }, () => {
     await harness.waitForDiagnostics(schemaUri);
 
     const items = completionItems(await requestCompletion(harness, schemaUri, position));
-    expect(items.map((item) => item.label)).toEqual([
+    expect(items.map((item) => item.label).sort()).toEqual([
+      'Address',
       'Boolean',
       'DateTime',
       'Int',
-      'String',
       'Post',
+      'String',
       'User',
-      'Address',
     ]);
+    for (const item of items) expect(item).not.toHaveProperty('sortText');
   });
 
   it('refreshes completion artifacts from the current buffer before classifying', async () => {
@@ -1307,12 +1326,12 @@ describe('language server', { timeout: timeouts.databaseOperation }, () => {
     });
 
     const items = completionItems(await requestCompletion(harness, schemaUri, updated.position));
-    expect(items.map((item) => item.label)).toEqual([
+    expect(items.map((item) => item.label).sort()).toEqual([
       'Boolean',
       'DateTime',
       'Int',
-      'String',
       'Post',
+      'String',
       'User',
     ]);
     await republished;
@@ -1371,12 +1390,12 @@ describe('language server', { timeout: timeouts.databaseOperation }, () => {
     });
 
     const items = completionItems(await requestCompletion(harness, schemaUri, updated.position));
-    expect(items.map((item) => item.label)).toEqual([
+    expect(items.map((item) => item.label).sort()).toEqual([
       'Boolean',
       'DateTime',
       'Int',
-      'String',
       'Post',
+      'String',
       'User',
     ]);
     await republished;
@@ -3097,6 +3116,22 @@ describe('language server project lifecycle', { timeout: timeouts.databaseOperat
 });
 
 describe('language server preserved artifacts', { timeout: timeouts.databaseOperation }, () => {
+  it('shares one binder across completion, signature help and semantic tokens', async () => {
+    harness = startHarness(resolveToSchemaWithAttributeContributions, pullDiagnosticsCapabilities);
+    await harness.initialize();
+    const { source, position } = sourceWithCursor(
+      '// use prisma-8\nmodel User { id Int @marker(|) }',
+    );
+    openDocument(harness, schemaUri, source);
+    await requestCompletion(harness, schemaUri, position);
+    await requestSignatureHelp(harness, schemaUri, position);
+    await requestSemanticTokens(harness, schemaUri);
+    const artifacts: ProjectArtifacts = vi.mocked(ProjectArtifacts).mock.results.at(-1)!.value;
+    const calls = vi.mocked(artifacts.binder).mock.results;
+    expect(calls).toHaveLength(3);
+    for (const call of calls) expect(call.value).toBe(calls[0]!.value);
+  });
+
   it('replaces the cached AST per URI on each edit while one symbol table tracks the project', async () => {
     harness = startHarness(resolveToSchema);
     await harness.initialize();
@@ -3362,7 +3397,7 @@ describe('language server interpreter diagnostics', { timeout: timeouts.database
     } as unknown as PslInterpretCapable;
     const resolution: ConfigResolution = {
       ...(await resolutionForInputs([schemaPath])),
-      interpretation: { source, context: {} as unknown as ContractSourceContext },
+      interpretation: { source, context: completionInterpretationContext },
     };
     return { resolveInputs: async () => resolution, spy };
   }
@@ -3491,7 +3526,28 @@ describe('language server interpreter diagnostics', { timeout: timeouts.database
     ]);
   });
 
-  it('capability-less configs pull exactly the pre-slice response', async () => {
+  it.each([false, true])(
+    'publishes binder failures without an interpreter (pull=%s)',
+    async (pull) => {
+      harness = startHarness(resolveToSchema, pull ? pullDiagnosticsCapabilities : {});
+      await harness.initialize();
+      openDocument(harness, schemaUri, '// use prisma-8\nmodel User {\n  id Missing\n}');
+      const diagnostics = pull
+        ? fullReportItems(await requestPullDiagnostics(harness, schemaUri))
+        : await harness.waitForDiagnostics(schemaUri);
+      expect(diagnostics).toEqual([
+        {
+          range: { start: { line: 2, character: 5 }, end: { line: 2, character: 12 } },
+          code: 'PSL_UNRESOLVED_REFERENCE',
+          message: 'Cannot find type "Missing"',
+          severity: DiagnosticSeverity.Error,
+          source: 'prisma',
+        },
+      ]);
+    },
+  );
+
+  it('capability-less configs retain parse and symbol diagnostics', async () => {
     harness = startHarness(resolveToSchema, pullDiagnosticsCapabilities);
     await harness.initialize();
     openDocument(harness, schemaUri, duplicateModelSource);
@@ -3504,7 +3560,7 @@ describe('language server interpreter diagnostics', { timeout: timeouts.database
     );
   });
 
-  it('capability-less configs publish exactly the pre-slice response', async () => {
+  it('capability-less configs publish parse and symbol diagnostics', async () => {
     harness = startHarness(resolveToSchema);
     await harness.initialize();
     openDocument(harness, schemaUri, duplicateModelSource);
@@ -3568,7 +3624,7 @@ describe('language server config failure surfacing', {
     } as unknown as PslInterpretCapable;
     return {
       ...(await resolutionForInputs([schemaPath])),
-      interpretation: { source, context: {} as unknown as ContractSourceContext },
+      interpretation: { source, context: completionInterpretationContext },
     };
   }
 

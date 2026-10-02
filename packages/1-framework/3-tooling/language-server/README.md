@@ -21,7 +21,9 @@ In pull mode, `interFileDependencies: true` tells the client that editor edits c
 
 Equivalent file URIs share one document and one normalized URI for source filenames and diagnostic publications, including clears. Normalization follows file-path identity: percent encoding is standardized, Windows paths are case-folded, and UNC authorities are preserved. The server does not resolve symlinks or preserve the editor's original URI spelling.
 
-Each immutable document snapshot parses lazily, at most once, and owns its AST, source registry, and raw parser diagnostics. Reading text alone does not parse. Projects reuse unchanged snapshots across configuration reloads while independently rebuilding combined sources, symbols, and interpretation. `ProjectArtifacts.document(uri)` returns the snapshot itself without parsing. `ProjectArtifacts.diagnostics(uri)` combines mapped parse, symbol, and interpretation diagnostics; whole-project reports supply precomputed symbol diagnostics so each report scans the project once for symbols. Interpretation is memoized per project revision, not attached to a document snapshot. Edits and disk invalidation produce new snapshots without changing previous parses.
+Each immutable document snapshot parses lazily, at most once, and owns its AST, source registry, and raw parser diagnostics. Reading text alone does not parse. Projects reuse unchanged snapshots across configuration reloads while independently rebuilding combined sources, symbols, binding, and interpretation. `ProjectArtifacts.document(uri)` returns the snapshot itself without parsing. `ProjectArtifacts.diagnostics(uri)` combines mapped parse and symbol diagnostics with one semantic diagnostic source; whole-project reports supply precomputed symbol diagnostics so each report scans the project once for symbols. Interpretation is memoized per project revision, not attached to a document snapshot. Edits and disk invalidation produce new snapshots without changing previous parses.
+
+Semantic diagnostics come from the configured interpreter when available, or from binding when no interpreter is configured. Interpreter failures do not switch diagnostic sources.
 
 ## Internal ownership
 
@@ -32,7 +34,7 @@ Closing the last editor document does not remove its project. Each config path h
 | [`server.ts`](src/server.ts) | Capability negotiation, protocol registration, editor-buffer updates, and feature-handler delegation. |
 | [`ProjectRegistry`](src/project-registry.ts) | Config-to-project and document-to-project indexes, nearest-config discovery, association cleanup, config watching, watched-file dispatch, and the global event sequence. |
 | [`Project`](src/project.ts) | Private resolved configuration and load state, serialized reloads and last-good fallback, membership transitions, schema-watcher registration, diagnostic history, and operations using the resolved analysis. |
-| [`ProjectArtifacts`](src/project-artifacts.ts) | Participating snapshots, combined sources and symbols, interpretation, and diagnostic assembly. |
+| [`ProjectArtifacts`](src/project-artifacts.ts) | Participating snapshots, combined sources and symbols, the snapshot's binder, interpretation, and diagnostic assembly. |
 | [`DocumentStore`](src/document-store.ts) and [`DocumentSnapshot`](src/document-snapshot.ts) | Editor overlays and disk text with watcher coverage; immutable text snapshots with lazy parsing. |
 
 Nearest-config discovery does not establish schema membership. Project operations check membership against their resolved configuration; pull reports can also serve a previously reported URI that has left membership so the client receives its clearing report. Synchronous AST and symbol reads use the existing document association without starting discovery or loading.
