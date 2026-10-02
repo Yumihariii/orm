@@ -25,6 +25,7 @@ Reviewer-maintained. Contract: `projects/data-types-completion/design.md` sectio
 | f | 1 (`8819d89a73`, `b237abc245`, `a8cbeacfb9`, `a1438656e8`, `625fa4411a`, `16f4682c19`) | ANOTHER ROUND NEEDED: 4 must-fix, 1 should-fix, 1 low |
 | f | 2 (`0e325b563a`, `a359d8c43e`, `71a218f46e`, `a68d3a22fa`, `dc4e090968`, `cb85a39d8c`) | SATISFIED: S2-f-R1-1 to S2-f-R1-5 closed; S2-f-R1-6 waits for the base merge; no new finding |
 | review fixes 2 | 1 (`c408e56420..ffb85f8f86`) | ANOTHER ROUND NEEDED: 1 must-fix, 2 low; the 16 items and the five manual QA defects closed; S2-f-R1-6 closed |
+| review fixes 2 | 2 (`ee348bc3a8`, `adc4da5fbe`, `78b09700d0`) | SATISFIED: S2-rf2-R1-1 to S2-rf2-R1-3 closed, no new finding |
 
 ## Findings log
 
@@ -193,7 +194,17 @@ Reviewer-maintained. Contract: `projects/data-types-completion/design.md` sectio
 
 - S2-f-R1-6: closed. `check:upgrade-coverage --mode pr --prev bot/data-types-completion` exits 0 on this tip.
 
+### Review fixes 2 round 2 status of the round 1 findings
+
+- S2-rf2-R1-1: closed (`ee348bc3a8`). When the written-value reader refuses a number member, the codec's `decodeJson` reads it; if the codec refuses it too, the reader's reason is reported. I reran the probe of 47 codecs and 11 member forms against the `main` results: under `pg/json@1` and `pg/jsonb@1`, every number form loads with the value `main` stores (`Low = 1` stores `1`, `Low = 1.5` stores `1.5`). The only forms `main` accepted that are still refused are the nine `sqlite/json@1` ones (S2-rf2-R1-2). When both paths refuse, the message is still the reader's (`pg/text has no cast from pg/int2`, `pg/int4 has no cast from pg/int8`, `pg/int8 has no cast from pg/numeric`), so the three rows of `domain-types-match-their-columns` stay true. Large numbers still keep every digit.
+- S2-rf2-R1-2: closed (`adc4da5fbe`). The script rewrites the members and value sets of a `sqlite/json@1` enum to the canonical JSON text of each document, in `contract.json` and `contract.d.ts`, only in old-format contracts (fixture `sqlite-json-enums`; the hash test recomputes its hashes). The reader takes a member written as a string of JSON text and stores the same text the script writes (`'"low"'`, `'{"b": 2, "a": 1}'` stored as `{"a":1,"b":2}`, `"1"`). The app text names the change, with examples, and design 10.1 step 4 says it.
+- S2-rf2-R1-3: closed (`78b09700d0`). On a folder with no SQL contract the script prints `No SQL contract was found under <root>; nothing changed.` and exits 0 (run by hand and tested). Both instruction texts say so.
+
 ## Round notes
+
+### Review fixes 2, round 2
+
+The three commits change only what the findings name, plus their tests, fixtures, design lines and instruction text. The two script copies are identical. No committed contract outside the script's fixtures changed. No `any`, bare `as` or new comment in production code. Checks: each touched test file run alone (`enum-block-members` 9, `interpreter.enum.member-values` 9, `psl.sqlite-written-values` 54, `psl-defaults-read-by-codec` 42, the six script test files) and `test/integration/test/upgrade-instructions/` (92): all pass. `turbo run typecheck --continue`: 171 of 171. `lint:agent`: exit 0. Logs and probe output in `wip/review-logs/r3-*`.
 
 ### Review fixes 2, round 1
 
