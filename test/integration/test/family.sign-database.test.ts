@@ -273,6 +273,72 @@ describe('family instance signSpaces', () => {
       },
       timeouts.spinUpPpgDev,
     );
+
+    it(
+      'leaves every marker as it was when a later marker write fails',
+      async () => {
+        if (!connectionString) {
+          throw new Error('Connection string not set');
+        }
+
+        await withClient(connectionString, async (client) => {
+          await client.query(`
+            create or replace function refuse_extension_marker() returns trigger as $$
+            begin
+              if new.space = 'ext' then
+                raise exception 'marker write refused';
+              end if;
+              return new;
+            end
+            $$ language plpgsql
+          `);
+          await client.query(`
+            create trigger refuse_extension_marker
+            before insert or update on prisma_contract.marker
+            for each row execute function refuse_extension_marker()
+          `);
+        });
+
+        const validatedContract = new PostgresContractSerializer().deserializeContract(
+          createTestContract(),
+        ) as Contract<SqlStorage>;
+
+        const driver = await postgresDriver.create(connectionString);
+        try {
+          const familyInstance = sql.create(
+            createControlStack({
+              family: sql,
+              target: postgres,
+              adapter: postgresAdapter,
+              driver: postgresDriver,
+              extensions: [],
+            }),
+          );
+
+          await expect(
+            familyInstance.signSpaces({
+              driver,
+              spaces: [
+                {
+                  space: APP_SPACE_ID,
+                  contract: validatedContract,
+                  verifiedMarker: { storageHash: 'old-hash', profileHash: 'old-profile-hash' },
+                },
+                { space: 'ext', contract: validatedContract, verifiedMarker: null },
+              ],
+            }),
+          ).rejects.toThrow(/marker write refused/);
+
+          const markers = await familyInstance.readAllMarkers({ driver });
+          expect([...markers].map(([space, marker]) => [space, marker.storageHash])).toEqual([
+            [APP_SPACE_ID, 'old-hash'],
+          ]);
+        } finally {
+          await driver.close();
+        }
+      },
+      timeouts.spinUpPpgDev,
+    );
   });
 
   describe('idempotent behavior', () => {

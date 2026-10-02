@@ -160,7 +160,7 @@ export interface SqlControlAdapter<TTarget extends string = string>
   ): Promise<void>;
 
   /**
-   * Runs `fn` in one transaction on `driver`: `BEGIN`, then `COMMIT` when `fn` resolves, or `ROLLBACK` and the error rethrown when it throws.
+   * Runs `fn` in one transaction on `driver`: `BEGIN`, then `COMMIT` when `fn` resolves, or `ROLLBACK` and the error rethrown when it throws. The driver must send `BEGIN`, every statement `fn` sends through it and the final `COMMIT` or `ROLLBACK` over one database session; the Postgres and SQLite control drivers each hold one connection.
    */
   withTransaction<T>(driver: SqlControlDriverInstance<TTarget>, fn: () => Promise<T>): Promise<T>;
 
