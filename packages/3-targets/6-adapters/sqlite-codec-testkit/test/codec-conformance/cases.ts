@@ -125,11 +125,6 @@ export const sqliteConformanceCases: readonly SqliteCodecConformanceCase[] = [
     label: 'document whose keys are not in sorted order',
     value: { b: 1, a: 2 },
     storageType: 'TEXT',
-    notYetCanonical: {
-      kind: 'mismatch',
-      reason:
-        'The canonical form is the document’s JSON text with its keys sorted, but encode writes the keys in the order the application gave them, and the projection returns the stored text.',
-    },
   },
   {
     codecId: 'sqlite/json@1',

@@ -37,7 +37,7 @@ import {
 
 interface DefaultCase {
   readonly column: string;
-  readonly typeText: string;
+  readonly baseTypeName: string;
   readonly dataType: string;
   readonly codecId: string;
   readonly many: boolean;
@@ -47,7 +47,7 @@ interface DefaultCase {
 const cases: readonly DefaultCase[] = [
   {
     column: 'byte',
-    typeText: 'bytea',
+    baseTypeName: 'bytea',
     dataType: 'pg/bytea',
     codecId: 'pg/bytea@1',
     many: false,
@@ -55,7 +55,7 @@ const cases: readonly DefaultCase[] = [
   },
   {
     column: 'bytes',
-    typeText: 'bytea',
+    baseTypeName: 'bytea',
     dataType: 'pg/bytea',
     codecId: 'pg/bytea@1',
     many: true,
@@ -63,7 +63,7 @@ const cases: readonly DefaultCase[] = [
   },
   {
     column: 'documents',
-    typeText: 'jsonb',
+    baseTypeName: 'jsonb',
     dataType: 'pg/jsonb',
     codecId: 'pg/jsonb@1',
     many: true,
@@ -71,7 +71,7 @@ const cases: readonly DefaultCase[] = [
   },
   {
     column: 'span',
-    typeText: 'interval',
+    baseTypeName: 'interval',
     dataType: 'pg/interval',
     codecId: 'pg/interval@1',
     many: false,
@@ -79,7 +79,7 @@ const cases: readonly DefaultCase[] = [
   },
   {
     column: 'spans',
-    typeText: 'interval',
+    baseTypeName: 'interval',
     dataType: 'pg/interval',
     codecId: 'pg/interval@1',
     many: true,
@@ -95,7 +95,7 @@ function createTable(): PostgresCreateTable {
     columns: [
       col('id', 'int4', { notNull: true, primaryKey: true }),
       ...cases.map((defaultCase) =>
-        col(defaultCase.column, `${defaultCase.typeText}${defaultCase.many ? '[]' : ''}`, {
+        col(defaultCase.column, `${defaultCase.baseTypeName}${defaultCase.many ? '[]' : ''}`, {
           default: lit(defaultCase.literal),
           codecRef: { codecId: defaultCase.codecId, ...(defaultCase.many ? { many: true } : {}) },
         }),

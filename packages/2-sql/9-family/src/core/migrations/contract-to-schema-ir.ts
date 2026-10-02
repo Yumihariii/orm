@@ -1,5 +1,5 @@
 import type { ColumnDefault, Contract, JsonValue } from '@internal/contract/types';
-import type { CodecRef } from '@internal/framework-components/codec';
+import { type CodecRef, canonicalFormOf } from '@internal/framework-components/codec';
 import type {
   MigrationPlannerConflict,
   SchemaNodeRef,
@@ -78,6 +78,7 @@ function convertColumn(
   // `storage.types` entry's codec and parameters.
   const resolved = resolveColumnTypeMetadata(column, storageTypes);
   const dataType = sqlDataTypeOfCodec(resolved.codecId, types);
+  const codec = types.codecLookup.descriptorFor(resolved.codecId);
   const baseTypeName = unquotedSqlBaseName(dataType, dataTypeParams(dataType, resolved.typeParams));
   const baseNativeType = schemaTypeText(dataType, resolved.typeParams);
   // `many: true` columns keep `nativeType` as the bare element type (matching
@@ -126,6 +127,7 @@ function convertColumn(
     codecRef: buildColumnCodecRef(resolved, column.many),
     codecBaseNativeType: baseTypeName,
     dataType,
+    ...ifDefined('toCanonicalForm', codec && canonicalFormOf(codec, types.dataTypeLookup)),
   };
 }
 

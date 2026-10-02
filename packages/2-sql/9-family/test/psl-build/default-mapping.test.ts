@@ -132,7 +132,7 @@ function forColumn(
   return {
     dataTypeEntries: entries,
     dataTypeLookup: createDataTypeLookup(types),
-    columnDataType: columnDataType.id,
+    columnCodec: { dataType: columnDataType.id },
     ...(shape.list === true ? { list: true } : {}),
   };
 }
@@ -315,7 +315,7 @@ describe('mapDefault with a tag entry that names the type its body is', () => {
         {
           dataTypeEntries: textEntries,
           dataTypeLookup: createDataTypeLookup([storedText]),
-          columnDataType: storedText.id,
+          columnCodec: { dataType: storedText.id },
         },
       ),
     ).toEqual({ attribute: '@default("{\\"a\\":1}")' });
@@ -334,5 +334,17 @@ describe('mapDefault on a type with a canonical form', () => {
       scalar: '@default("2024-01-01")',
       list: '@default(["2024-01-01", "2024-06-30"])',
     });
+  });
+
+  it("prints a stored value in the canonical form its codec declares, before its data type's", () => {
+    expect(
+      mapDefault(
+        { kind: 'literal', value: '20240101' },
+        {
+          ...forColumn(date),
+          columnCodec: { dataType: date.id, toCanonicalForm: (value) => `${String(value)}Z` },
+        },
+      )?.attribute,
+    ).toBe('@default("20240101Z")');
   });
 });

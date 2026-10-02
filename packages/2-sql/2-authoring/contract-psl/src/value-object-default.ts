@@ -11,6 +11,7 @@ import {
   type Codec,
   type CodecLookupWithDescriptors,
   codecForRef,
+  type DataTypeLookup,
 } from '@internal/framework-components/codec';
 import {
   isValueObjectMember,
@@ -47,6 +48,7 @@ export interface ValueObjectDefaultInput {
   readonly valueObjectName: string;
   readonly types: ValueObjectTypes;
   readonly codecLookup: CodecLookupWithDescriptors | undefined;
+  readonly dataTypeLookup: DataTypeLookup;
 }
 
 /**
@@ -151,6 +153,7 @@ export function valueObjectDefaultMismatches(
       value,
       column: member.descriptor,
       codecLookup: input.codecLookup,
+      dataTypeLookup: input.dataTypeLookup,
       fieldPath: path,
     });
     if (!reading.ok) {

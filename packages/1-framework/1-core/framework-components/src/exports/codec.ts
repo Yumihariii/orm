@@ -14,7 +14,11 @@ export type {
   CodecDescriptor,
   CodecDescriptorTemplate,
 } from '../shared/codec-descriptor';
-export { CodecDescriptorImpl, CodecDescriptorTemplateImpl } from '../shared/codec-descriptor';
+export {
+  CodecDescriptorImpl,
+  CodecDescriptorTemplateImpl,
+  canonicalFormOf,
+} from '../shared/codec-descriptor';
 export type {
   CodecCallContext,
   CodecInstanceContext,

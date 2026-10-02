@@ -1,8 +1,7 @@
-import type { ColumnDefault, Contract, ControlPolicy, JsonValue } from '@internal/contract/types';
+import type { ColumnDefault, Contract, ControlPolicy } from '@internal/contract/types';
 import type { SqlSchemaDiffResult } from '@internal/family-sql/control';
 import { contractToSchemaIR, sqlTypeLookupsOf } from '@internal/family-sql/control';
 import { verifySqlSchemaByDiff } from '@internal/family-sql/diff';
-import { type Codec, materializeCodec } from '@internal/framework-components/codec';
 import type { TargetBoundComponentDescriptor } from '@internal/framework-components/components';
 import type {
   SchemaDiffIssue,
@@ -20,7 +19,6 @@ import type {
 } from '@internal/sql-schema-ir/types';
 import { relationalNodeGranularity, SqlSchemaIR } from '@internal/sql-schema-ir/types';
 import { blindCast } from '@internal/utils/casts';
-import { SQLITE_DATETIME_CODEC_ID, SQLITE_JSON_CODEC_ID } from '../codec-ids';
 import { sqliteResolveDefault } from '../default-normalizer';
 import { renderDefaultLiteral } from './planner-ddl-builders';
 
@@ -126,16 +124,13 @@ export function diffSqliteSchema(input: {
 }): SqlSchemaDiffResult {
   const types = sqlTypeLookupsOf(input.frameworkComponents);
   const expected = sqliteContractToSchema(input.contract, types);
-  const actual = withDefaultsReadThroughCodec(
-    expected,
+  const actual =
     input.schema instanceof SqlSchemaIR
       ? input.schema
       : blindCast<
           SqlSchemaIR,
           'the SQLite introspection adapter always produces a flat SqlSchemaIR root'
-        >(input.schema),
-    types,
-  );
+        >(input.schema);
   const issues = diffSchemas(expected, actual);
   const namespacesWithTables = Object.values(input.contract.storage.namespaces).filter(
     (ns) => Object.keys(ns.entries.table ?? {}).length > 0,
@@ -145,66 +140,6 @@ export function diffSqliteSchema(input: {
     resolveControlPolicy: (issue) => resolveControlPolicy(issue, input.contract),
     namespacePairs: namespacesWithTables.map(() => ({ actual })),
   };
-}
-
-/**
- * The codecs whose stored text has several spellings for one value: a `sqlite/json@1` default
- * written by hand may order keys or space a document differently, and a `sqlite/datetime@1` default
- * holds the text the codec writes for every row (`2024-01-01T00:00:00.000Z`) while the contract
- * holds the canonical form (`2024-01-01T00:00:00Z`).
- */
-const DEFAULTS_READ_THROUGH_CODEC: readonly string[] = [
-  SQLITE_JSON_CODEC_ID,
-  SQLITE_DATETIME_CODEC_ID,
-];
-
-/**
- * A reported default of a column whose codec is one of {@link DEFAULTS_READ_THROUGH_CODEC} is read
- * through that codec and written back in its canonical form, so only a different value is drift.
- */
-function withDefaultsReadThroughCodec(
-  expected: SqlSchemaIR,
-  actual: SqlSchemaIR,
-  types: SqlTypeLookups,
-): SqlSchemaIR {
-  const codecs = new Map<string, Codec>();
-  for (const codecId of DEFAULTS_READ_THROUGH_CODEC) {
-    const descriptor = types.codecLookup.descriptorFor(codecId);
-    if (descriptor !== undefined) {
-      codecs.set(codecId, materializeCodec(descriptor, { codecId }, { name: codecId }));
-    }
-  }
-  let changed = false;
-  const tables: Record<string, SqlTableIRInput> = {};
-  for (const [tableName, table] of Object.entries(actual.tables)) {
-    const columns: Record<string, SqlColumnIRInput> = {};
-    for (const [columnName, column] of Object.entries(table.columns)) {
-      const codecId = expected.tables[tableName]?.columns[columnName]?.codecRef?.codecId;
-      const codec = codecId === undefined ? undefined : codecs.get(codecId);
-      const reported =
-        column.resolvedDefault?.kind === 'literal' ? column.resolvedDefault.value : undefined;
-      const canonical =
-        codec !== undefined && typeof reported === 'string'
-          ? canonicalText(codec, reported)
-          : undefined;
-      if (canonical === undefined || canonical === reported) {
-        columns[columnName] = column;
-        continue;
-      }
-      changed = true;
-      columns[columnName] = { ...column, resolvedDefault: { kind: 'literal', value: canonical } };
-    }
-    tables[tableName] = { ...table, columns };
-  }
-  return changed ? new SqlSchemaIR({ tables }) : actual;
-}
-
-function canonicalText(codec: Codec, text: string): JsonValue | undefined {
-  try {
-    return codec.encodeJson(codec.decodeJson(text));
-  } catch {
-    return undefined;
-  }
 }
 
 export interface SqlitePlanDiff {
@@ -235,11 +170,7 @@ export function buildSqlitePlanDiff(input: {
   // normalizes either input uniformly (an already-real tree passes through
   // untouched — its nested values are already instances) and is a no-op
   // rebuild in the common (real-instance) case, so this is always safe to run.
-  const actual = withDefaultsReadThroughCodec(
-    expected,
-    new SqlSchemaIR(withRecordKeyNames(input.actualSchema)),
-    types,
-  );
+  const actual = new SqlSchemaIR(withRecordKeyNames(input.actualSchema));
   const issues = diffSchemas(expected, actual);
   return { expected, actual, issues };
 }

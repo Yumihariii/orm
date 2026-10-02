@@ -759,6 +759,7 @@ export function lowerDefaultForField(input: {
         nullable: input.field.optional,
         ...input.valueObjectDefault,
         codecLookup: input.codecLookup,
+        dataTypeLookup: input.dataTypeSupport.lookup,
       });
       for (const { code, message } of mismatches) {
         input.diagnostics.push({ code, message, ...source.at() });

@@ -1,11 +1,14 @@
+import { canonicalFormOf } from '@internal/framework-components/codec';
 import {
   PrimaryKey,
   SqlColumnIR,
   SqlForeignKeyIR,
   SqlUniqueIR,
 } from '@internal/sql-schema-ir/types';
+import { ifDefined } from '@internal/utils/defined';
 import { describe, expect, it } from 'vitest';
 import { SQLITE_DATETIME_CODEC_ID } from '../../src/core/codec-ids';
+import { sqliteDatetimeDescriptor } from '../../src/core/codecs';
 import { sqliteText } from '../../src/core/data-types';
 import {
   columnSpecFromNode,
@@ -90,6 +93,10 @@ describe('a contract default its codec does not hold', () => {
     codecRef: { codecId: SQLITE_DATETIME_CODEC_ID },
     codecBaseNativeType: 'text',
     dataType: sqliteText,
+    ...ifDefined(
+      'toCanonicalForm',
+      canonicalFormOf(sqliteDatetimeDescriptor, sqliteTestTypes.dataTypeLookup),
+    ),
   });
   const refusal = expect.objectContaining({
     code: 'CONTRACT.DEFAULT_INVALID',

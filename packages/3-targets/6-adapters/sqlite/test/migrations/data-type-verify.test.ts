@@ -6,8 +6,22 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { type ColumnDefault, type Contract, coreHash, profileHash } from '@internal/contract/types';
+import {
+  type ColumnDefault,
+  type Contract,
+  coreHash,
+  type JsonValue,
+  profileHash,
+} from '@internal/contract/types';
 import type { SqlMigrationPlanOperation } from '@internal/family-sql/control';
+import {
+  type CodecCallContext,
+  CodecDescriptorImpl,
+  CodecImpl,
+  type CodecInstanceContext,
+  dataTypeId,
+} from '@internal/framework-components/codec';
+import type { TargetBoundComponentDescriptor } from '@internal/framework-components/components';
 import { APP_SPACE_ID } from '@internal/framework-components/control';
 import { UNBOUND_NAMESPACE_ID } from '@internal/framework-components/ir';
 import { SqlStorage, type StorageColumn } from '@internal/sql-contract/types';
@@ -147,6 +161,42 @@ const documentContract = documentContractWith({
   default: literal('{"a":1,"b":[1,2]}'),
 });
 
+class LowerCaseCodec extends CodecImpl<'demo/lower-case@1', readonly ['equality'], string, string> {
+  async encode(value: string, _ctx: CodecCallContext): Promise<string> {
+    return value;
+  }
+  async decode(wire: string, _ctx: CodecCallContext): Promise<string> {
+    return wire;
+  }
+  encodeJson(value: string): JsonValue {
+    return value;
+  }
+  decodeJson(json: JsonValue): string {
+    return String(json);
+  }
+}
+
+/** An extension codec over `sqlite/text` whose values have a finer canonical form than the text type's. */
+class LowerCaseDescriptor extends CodecDescriptorImpl<void> {
+  override readonly dataType = dataTypeId('sqlite/text');
+  override readonly codecId = 'demo/lower-case@1' as const;
+  override readonly traits = ['equality'] as const;
+  override readonly paramsSchema = undefined;
+  override readonly toCanonicalForm = (value: JsonValue): JsonValue => String(value).toLowerCase();
+  override factory(): (ctx: CodecInstanceContext) => LowerCaseCodec {
+    return () => new LowerCaseCodec(this);
+  }
+}
+
+const lowerCaseExtension = {
+  kind: 'extension',
+  id: 'demo-lower-case',
+  familyId: 'sql',
+  targetId: 'sqlite',
+  version: '0.0.0',
+  types: { codecTypes: { codecDescriptors: [new LowerCaseDescriptor()] } },
+} satisfies TargetBoundComponentDescriptor<'sql', 'sqlite'>;
+
 async function verify(driver: ReturnType<typeof createMemoryDriver>) {
   const schema = await introspector.introspect(driver);
   return familyInstance.verifySchema({
@@ -240,6 +290,33 @@ describe('verify on SQLite, for each data type', () => {
           schema: await introspector.introspect(driver),
           strict: true,
           frameworkComponents,
+        });
+        expect(result.ok).toBe(ok);
+      } finally {
+        await driver.close();
+      }
+    },
+  );
+
+  it.each([
+    ['in another form of the same value', `'ABC'`, true],
+    ['with a different value', `'ABD'`, false],
+  ])(
+    'compares a default of an extension codec that declares a canonical form, written %s',
+    async (_name, sqlDefault, ok) => {
+      const driver = createMemoryDriver();
+      try {
+        await driver.query(`CREATE TABLE "doc" ("body" TEXT NOT NULL DEFAULT ${sqlDefault})`);
+        const result = familyInstance.verifySchema({
+          contract: documentContractWith({
+            dataType: 'sqlite/text',
+            codecId: 'demo/lower-case@1',
+            nullable: false,
+            default: literal('abc'),
+          }),
+          schema: await introspector.introspect(driver),
+          strict: true,
+          frameworkComponents: [...frameworkComponents, lowerCaseExtension],
         });
         expect(result.ok).toBe(ok);
       } finally {

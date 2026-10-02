@@ -1,6 +1,6 @@
 import type { ColumnDefault } from '@internal/contract/types';
 import type { CodecControlHooks } from '@internal/family-sql/control';
-import type { DataType } from '@internal/framework-components/codec';
+import type { ToCanonicalForm } from '@internal/framework-components/codec';
 import type { SqlTypeLookups } from '@internal/sql-contract/data-type';
 import type { StorageColumn } from '@internal/sql-contract/types';
 import type { DdlColumn } from '@internal/sql-relational-core/ast';
@@ -68,18 +68,18 @@ function columnTypeLike(
 }
 
 /**
- * A literal default in the canonical form of the column's data type, which DDL writes (ADR 254). A
- * default the type refuses, which a contract emitted by an earlier version can hold, is refused
+ * A literal default in the canonical form of the column's values, which DDL writes (ADR 254). A
+ * default the form refuses, which a contract emitted by an earlier version can hold, is refused
  * here rather than written, since the database would never hold the text the contract states.
  */
 function inCanonicalForm(
   columnName: string,
   columnDefault: ColumnDefault | undefined,
-  dataType: DataType | undefined,
+  toCanonicalForm: ToCanonicalForm | undefined,
   many: boolean,
 ): ColumnDefault | undefined {
   if (columnDefault?.kind !== 'literal') return columnDefault;
-  const refusal = contractDefaultRefusal(columnDefault, dataType?.toCanonicalForm, many);
+  const refusal = contractDefaultRefusal(columnDefault, toCanonicalForm, many);
   if (refusal !== undefined) {
     throw postgresError('CONTRACT.DEFAULT_INVALID', `Column "${columnName}": ${refusal}`, {
       meta: { reason: 'default-not-canonical', column: columnName },
@@ -87,7 +87,7 @@ function inCanonicalForm(
   }
   return {
     kind: 'literal',
-    value: defaultInCanonicalForm(columnDefault.value, dataType?.toCanonicalForm, many).value,
+    value: defaultInCanonicalForm(columnDefault.value, toCanonicalForm, many).value,
   };
 }
 
@@ -103,7 +103,7 @@ export function renderColumnDdl(
   const like = columnLike(column);
   const typeSql = buildColumnTypeSql(like, types);
   const ddlDefault = postgresDefaultToDdlColumnDefault(
-    inCanonicalForm(name, like.default, column.dataType, like.many === true),
+    inCanonicalForm(name, like.default, column.toCanonicalForm, like.many === true),
   );
   return contractFree.col(name, typeSql, {
     ...(!column.nullable ? { notNull: true } : {}),
@@ -153,7 +153,7 @@ export function buildSetDefaultColumn(
   if (authored === undefined) return undefined;
   const typeLike = columnTypeLike('column default', defaultNode);
   const ddlDefault = postgresDefaultToDdlColumnDefault(
-    inCanonicalForm(columnName, authored, defaultNode.dataType, typeLike.many === true),
+    inCanonicalForm(columnName, authored, defaultNode.toCanonicalForm, typeLike.many === true),
   );
   if (ddlDefault === undefined) return undefined;
   return contractFree.col(columnName, buildColumnTypeSql(typeLike, types, {}, false), {

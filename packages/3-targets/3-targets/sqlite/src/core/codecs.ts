@@ -525,7 +525,7 @@ sqliteBlobColumn satisfies ColumnHelperForStrict<SqliteBlobDescriptor>;
 export const sqliteDatetimeCanonical = (text: string): string =>
   canonicalDateTime(text, {
     shape: 'instant',
-    dataTypeId: SQLITE_DATETIME_CODEC_ID,
+    ownerId: SQLITE_DATETIME_CODEC_ID,
     maxFractionDigits: 3,
     range: { earliest: '-271821-04-20T00:00:00Z', latest: '+275760-09-13T00:00:00Z' },
   });
@@ -648,6 +648,25 @@ function parseJsonText(text: string): { readonly value: JsonValue } | undefined 
 }
 
 /**
+ * `sqlite/text` declares no canonical form, so the codec declares the one of its values: the JSON
+ * text of the document, with sorted keys and no added whitespace.
+ */
+const jsonTextCanonicalForm: ToCanonicalForm = (value) => {
+  const document = typeof value === 'string' ? parseJsonText(value) : undefined;
+  if (document === undefined) {
+    throw structuredError(
+      'CONTRACT.CAST_REFUSED',
+      `Expected the JSON text of a document, got ${JSON.stringify(value)}.`,
+      {
+        why: 'A SQLite JSON column stores the JSON text of its document.',
+        fix: 'Write the document as JSON text, as in {"plan": "free"}.',
+      },
+    );
+  }
+  return canonicalizeJson(document.value);
+};
+
+/**
  * The column stores the document's JSON text and the canonical form is that text, so the stored
  * value is projected as it is: a string the enclosing JSON constructor embeds as a string.
  */
@@ -655,6 +674,7 @@ export class SqliteJsonDescriptor extends SqliteCodecDescriptor<void> {
   protected override jsonProjection(expression: ProjectionExpr): ProjectionExpr {
     return expression;
   }
+  override readonly toCanonicalForm = jsonTextCanonicalForm;
   override readonly dataType = sqliteText.id;
   override readonly codecId = SQLITE_JSON_CODEC_ID;
   override readonly traits = ['equality'] as const;

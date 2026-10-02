@@ -54,8 +54,8 @@ export interface DataType {
   readonly casts: Readonly<Record<DataTypeId, Cast>>;
   readonly listCast?: ListCast;
   /**
-   * Gives a value of this type its canonical form. Everything that reads, compares or writes a
-   * stored value of the type goes through it, so two forms of one value are one value.
+   * Gives a value of this type its canonical form, so two forms of one value are one value. Read it
+   * through `canonicalFormOf`, which takes a codec's own form in its place.
    */
   readonly toCanonicalForm?: ToCanonicalForm;
 }

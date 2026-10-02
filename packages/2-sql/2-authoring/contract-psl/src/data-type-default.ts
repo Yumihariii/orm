@@ -1,8 +1,9 @@
 /**
  * Reading a `@default(...)` value: a written value is read by the authoring entry for the syntax it
  * is written in, which gives it a data type; the column's type takes it directly or through a cast;
- * and the column's codec, built with the column's type parameters, reads the canonical form with
- * `decodeJson`, which refuses a value the column would not store, before it is stored.
+ * the column's codec, built with the column's type parameters, reads it with `decodeJson`, which
+ * refuses a value the column would not store; and it is stored in the canonical form of the
+ * column's values, which `canonicalFormOf` gives.
  *
  * No per-type code and no per-codec branch live here. ADR 254.
  */
@@ -16,7 +17,11 @@ import type {
   DataTypeId,
   DataTypeLookup,
 } from '@internal/framework-components/codec';
-import { codecForRef } from '@internal/framework-components/codec';
+import {
+  canonicalFormOf,
+  codecForRef,
+  type ToCanonicalForm,
+} from '@internal/framework-components/codec';
 import type { ContributedPslDiagnosticCode } from '@internal/framework-components/psl-ast';
 import { blindCast } from '@internal/utils/casts';
 import { ifDefined } from '@internal/utils/defined';
@@ -243,15 +248,15 @@ function codecRefTypeParams(
       );
 }
 
-/** A value in the canonical form the column's codec declares, when it declares one. */
-function inCodecCanonicalForm(
-  descriptor: AnyCodecDescriptor,
+/** A value in the canonical form of the column's values, when they have one. */
+function inCanonicalForm(
+  toCanonicalForm: ToCanonicalForm | undefined,
   value: JsonValue,
   elementIndex: number | undefined,
 ): ReadDefaultResult {
-  if (descriptor.toCanonicalForm === undefined) return { ok: true, value };
+  if (toCanonicalForm === undefined) return { ok: true, value };
   try {
-    return { ok: true, value: descriptor.toCanonicalForm(value) };
+    return { ok: true, value: toCanonicalForm(value) };
   } catch (error) {
     if (isInternalError(error)) throw error;
     return { ok: false, refusal: { kind: 'unreadable', message: messageOf(error), elementIndex } };
@@ -259,11 +264,12 @@ function inCodecCanonicalForm(
 }
 
 /**
- * The column's codec descriptor, and `read`, which reads a value in its stored JSON form with the column's codec, built with the column's type parameters.
+ * The column's codec descriptor, and `read`, which reads a value in its stored JSON form with the column's codec, built with the column's type parameters, and gives it the canonical form of the column's values.
  */
 function storedValueReader(input: {
   readonly column: DefaultColumn;
   readonly codecLookup: CodecLookupWithDescriptors | undefined;
+  readonly dataTypeLookup: DataTypeLookup;
   readonly fieldPath: string;
 }): {
   readonly descriptor: AnyCodecDescriptor;
@@ -284,13 +290,10 @@ function storedValueReader(input: {
       `Field "${input.fieldPath}": no codec descriptor is registered for "${input.column.codecId}", but the column was resolved from one.`,
     );
   }
+  const toCanonicalForm = canonicalFormOf(descriptor, input.dataTypeLookup);
   const read = (written: JsonValue, elementIndex: number | undefined): ReadDefaultResult => {
-    const canonical = inCodecCanonicalForm(descriptor, written, elementIndex);
-    if (!canonical.ok) return canonical;
-    const { value } = canonical;
     try {
-      codec.decodeJson(value);
-      return { ok: true, value };
+      codec.decodeJson(written);
     } catch (error) {
       if (isInternalError(error)) throw error;
       return {
@@ -303,6 +306,7 @@ function storedValueReader(input: {
         },
       };
     }
+    return inCanonicalForm(toCanonicalForm, written, elementIndex);
   };
   return { descriptor, read };
 }
@@ -314,6 +318,7 @@ export function readStoredValue(input: {
   readonly value: JsonValue;
   readonly column: DefaultColumn;
   readonly codecLookup: CodecLookupWithDescriptors | undefined;
+  readonly dataTypeLookup: DataTypeLookup;
   readonly fieldPath: string;
 }): DefaultDiagnosticResult {
   const reading = storedValueReader(input).read(input.value, undefined);
@@ -334,7 +339,10 @@ export function readDataTypeDefault(input: {
   readonly support: DataTypeSupport;
   readonly fieldPath: string;
 }): ReadDefaultResult {
-  const { descriptor, read: readStored } = storedValueReader(input);
+  const { descriptor, read: readStored } = storedValueReader({
+    ...input,
+    dataTypeLookup: input.support.lookup,
+  });
   const columnType = descriptor.dataType;
 
   const readOne = (
