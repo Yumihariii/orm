@@ -12,7 +12,7 @@ import { blindCast } from '@internal/utils/casts';
 import { notOk, ok, type Result } from '@internal/utils/result';
 import { interpretAttribute, isOptionalArgType } from '../attribute-spec/interpret';
 import type { BlockAttributeSpecFactory } from '../attribute-spec/spec-context';
-import type { AttributeCtx } from '../attribute-spec/types';
+import type { BlockAttributeCtx } from '../attribute-spec/types';
 import type { Binder } from '../binder';
 import { diagnosticSource, type PslDiagnostic } from '../diagnostic';
 import { findBlockDescriptor } from '../extension-block';
@@ -38,7 +38,7 @@ export function interpretExtensionBlock<S extends BlockSpec<unknown>>(
   input: InterpretExtensionBlockInput<S>,
 ): Result<ParsedPslExtensionBlock<InferBlock<S>>, readonly PslDiagnostic[]> {
   const { block, descriptor, spec, symbols, sources, binder, dataTypes } = input;
-  const ctx: AttributeCtx = { sources, symbols, binder };
+  const ctx: BlockAttributeCtx = { sources, symbols, binder, selfBlock: block };
   const entries =
     spec.mode === 'struct'
       ? interpretStructBlock(block, spec, ctx)
@@ -82,7 +82,7 @@ interface InterpretedBlockEntries {
 function interpretStructBlock(
   block: BlockSymbol,
   spec: StructBlockSpec,
-  ctx: AttributeCtx,
+  ctx: BlockAttributeCtx,
 ): InterpretedBlockEntries {
   const diagnostics: PslDiagnostic[] = [];
   let failed = false;
@@ -152,7 +152,7 @@ function interpretStructBlock(
 function interpretMapBlock(
   block: BlockSymbol,
   spec: MapBlockSpec,
-  ctx: AttributeCtx,
+  ctx: BlockAttributeCtx,
 ): InterpretedBlockEntries {
   const diagnostics: PslDiagnostic[] = [];
   let failed = false;
@@ -195,7 +195,7 @@ function interpretMapBlock(
 function duplicateParameterDiagnostic(
   block: BlockSymbol,
   key: string,
-  ctx: AttributeCtx,
+  ctx: BlockAttributeCtx,
   node: AstNode,
   span: PslSpan,
 ): PslDiagnostic {
@@ -211,7 +211,7 @@ function duplicateParameterDiagnostic(
 function bareEntryDiagnostic(
   block: BlockSymbol,
   key: string,
-  ctx: AttributeCtx,
+  ctx: BlockAttributeCtx,
   node: AstNode,
   span: PslSpan,
 ): PslDiagnostic {
@@ -267,11 +267,12 @@ export function interpretExtensionBlockAttributes(input: InterpretExtensionBlock
       BlockAttributeSpecFactory,
       'framework core cannot name AttributeSpec, so block-attribute factories transit the descriptor erased as unknown; this is the single point that restores the factory type the descriptor surface documents'
     >(declared[name]);
-    const spec = factory(blockSpecContext({ symbols, block, dataTypes }));
+    const spec = factory(blockSpecContext({ symbols, dataTypes }));
     const result = interpretAttribute(attribute, spec, {
       sources,
       symbols,
       binder,
+      selfBlock: block,
     });
     if (result.ok) {
       const argSpans: Record<string, PslSpan> = Object.create(null);
@@ -292,7 +293,7 @@ export function interpretExtensionBlockAttributes(input: InterpretExtensionBlock
 function entryDiagnostic(
   code: PslDiagnostic['code'],
   message: string,
-  ctx: AttributeCtx,
+  ctx: BlockAttributeCtx,
   node: AstNode,
   span: PslSpan,
 ): PslDiagnostic {
@@ -325,7 +326,7 @@ export function interpretExtensionBlocks(
       const descriptor = findBlockDescriptor(pslBlockDescriptors, block.keyword);
       if (descriptor === undefined) continue;
       const spec = blockSpecFactoryOf(descriptor)(
-        blockSpecContext({ symbols: symbolTable, block, dataTypes }),
+        blockSpecContext({ symbols: symbolTable, dataTypes }),
       );
       const parsed = interpretExtensionBlock({
         block,
