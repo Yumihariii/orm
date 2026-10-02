@@ -4,7 +4,9 @@ import { ok } from '@internal/utils/result';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   cleanupProjectDirs,
+  conflictSpace,
   envelopeOf,
+  failedSpace,
   HASH_A,
   HASH_EXT,
   harness,
@@ -62,7 +64,7 @@ describe('db sign when a ref cannot be written after the markers are written', (
     expect(settledError(run)).toMatchObject({
       summary: 'Database signed, but 1 ref was not written',
       why: expect.stringMatching(
-        /^The database was signed: the markers of spaces "app", "pgvector" were written\. These refs were not written: ref "db" of space "app" \(.*EACCES.*\)\.$/,
+        /^The database was signed: the markers of spaces "app", "pgvector" hold their contracts\. These refs were not written: ref "db" of space "app" \(.*EACCES.*\)\.$/,
       ),
       nextActions: [
         {
@@ -73,6 +75,8 @@ describe('db sign when a ref cannot be written after the markers are written', (
       ],
       meta: {
         signedSpaces: ['app', 'pgvector'],
+        failedSpaces: [],
+        conflictSpaces: [],
         unwrittenRefs: [{ space: 'app', name: 'db', hash: HASH_A }],
         advancedRefs: [{ space: 'pgvector', name: 'db', hash: HASH_EXT }],
       },
@@ -100,6 +104,37 @@ describe('db sign when a ref cannot be written after the markers are written', (
           command: 'prisma-test db sign --contract "staging" --advance-ref production',
         },
       ],
+    });
+  });
+
+  it('also names the spaces it did not sign', async () => {
+    mocks.dbSign.mockResolvedValue(
+      ok({
+        spaces: [
+          signedSpace('app', HASH_A),
+          failedSpace('pgvector', HASH_EXT),
+          conflictSpace('audit', HASH_EXT),
+        ],
+      }),
+    );
+    const dir = await projectDir();
+
+    const run = await withReadOnlyAppRefs(dir, () =>
+      harness(ormConfig()).run(['db', 'sign', '--json'], { cwd: dir }),
+    );
+
+    expect(run.exitCode).toBe(2);
+    expect(settledError(run)).toMatchObject({
+      why: expect.stringMatching(
+        /^The database was signed: the marker of space "app" holds its contract\. Space "pgvector" was not signed, because its schema does not satisfy its contract\. Space "audit" was not signed, because its marker changed while db sign ran\. These refs were not written: ref "db" of space "app" \(.*EACCES.*\)\.$/,
+      ),
+      meta: {
+        signedSpaces: ['app'],
+        failedSpaces: ['pgvector'],
+        conflictSpaces: ['audit'],
+        unwrittenRefs: [{ space: 'app', name: 'db', hash: HASH_A }],
+        advancedRefs: [],
+      },
     });
   });
 });

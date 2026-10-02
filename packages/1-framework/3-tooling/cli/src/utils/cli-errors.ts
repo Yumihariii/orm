@@ -153,11 +153,28 @@ export interface UnwrittenRef {
   readonly reason: string;
 }
 
+function quotedSpaces(spaces: readonly string[]): string {
+  return spaces.map((space) => `"${space}"`).join(', ');
+}
+
+function notSignedSentence(
+  spaces: readonly string[],
+  because: string,
+  becausePlural: string,
+): string {
+  if (spaces.length === 0) return '';
+  return spaces.length === 1
+    ? ` Space ${quotedSpaces(spaces)} was not signed, because ${because}.`
+    : ` Spaces ${quotedSpaces(spaces)} were not signed, because ${becausePlural}.`;
+}
+
 /**
- * `db sign` wrote the markers, then failed to write one or more refs or their snapshots. The database is signed; running the command again writes the refs.
+ * `db sign` wrote the markers, then failed to write one or more refs or their snapshots. The database is signed; running the command again writes the refs. The error also names the spaces it did not sign: those whose schema failed verification, and those whose marker changed while it ran.
  */
 export function errorSignRefsNotWritten(options: {
   readonly signedSpaces: readonly string[];
+  readonly failedSpaces: readonly string[];
+  readonly conflictSpaces: readonly string[];
   readonly unwrittenRefs: readonly UnwrittenRef[];
   readonly advancedRefs: readonly {
     readonly space: string;
@@ -167,12 +184,22 @@ export function errorSignRefsNotWritten(options: {
   readonly rerunCommand: string;
   readonly cause: unknown;
 }): ActionableCliError {
-  const { signedSpaces, unwrittenRefs, rerunCommand } = options;
-  const quoted = signedSpaces.map((space) => `"${space}"`).join(', ');
+  const { signedSpaces, failedSpaces, conflictSpaces, unwrittenRefs, rerunCommand } = options;
   const markers =
     signedSpaces.length === 1
-      ? `the marker of space ${quoted} was written`
-      : `the markers of spaces ${quoted} were written`;
+      ? `the marker of space ${quotedSpaces(signedSpaces)} holds its contract`
+      : `the markers of spaces ${quotedSpaces(signedSpaces)} hold their contracts`;
+  const notSigned =
+    notSignedSentence(
+      failedSpaces,
+      'its schema does not satisfy its contract',
+      'their schemas do not satisfy their contracts',
+    ) +
+    notSignedSentence(
+      conflictSpaces,
+      'its marker changed while db sign ran',
+      'their markers changed while db sign ran',
+    );
   const refs = unwrittenRefs
     .map((ref) => `ref "${ref.name}" of space "${ref.space}" (${ref.reason})`)
     .join('; ');
@@ -181,13 +208,15 @@ export function errorSignRefsNotWritten(options: {
     'MIGRATION.SIGN_REFS_NOT_WRITTEN',
     `Database signed, but ${count} ${count === 1 ? 'ref was' : 'refs were'} not written`,
     {
-      why: `The database was signed: ${markers}. These refs were not written: ${refs}.`,
+      why: `The database was signed: ${markers}.${notSigned} These refs were not written: ${refs}.`,
       fix: `Fix what stopped the write, then run \`${rerunCommand}\` again: the markers already hold the contracts, so it writes only the refs.`,
       nextActions: [
         runCommandAction('Sign again to write the refs that were not written', rerunCommand),
       ],
       meta: {
         signedSpaces,
+        failedSpaces,
+        conflictSpaces,
         unwrittenRefs,
         advancedRefs: options.advancedRefs,
       },

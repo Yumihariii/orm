@@ -545,6 +545,12 @@ export function createDbSignCommand(
             normalizeError(
               errorSignRefsNotWritten({
                 signedSpaces: spaces.filter(isSigned).map((outcome) => outcome.space),
+                failedSpaces: spaces
+                  .filter((outcome) => outcome.status === 'failed')
+                  .map((outcome) => outcome.space),
+                conflictSpaces: spaces
+                  .filter((outcome) => outcome.status === 'conflict')
+                  .map((outcome) => outcome.space),
                 unwrittenRefs: unwritten.map(({ space, name, hash, reason }) => ({
                   space,
                   name,
