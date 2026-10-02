@@ -2,12 +2,15 @@ import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
   cpSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -33,12 +36,12 @@ afterAll(() => {
   for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-function readTree(root: string): Record<string, string> {
+function readTree(root: string, dir = root): Record<string, string> {
   const files: Record<string, string> = {};
-  for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const path = join(entry.parentPath, entry.name);
-    files[relative(root, path)] = readFileSync(path, 'utf8');
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) Object.assign(files, readTree(root, path));
+    else if (entry.isFile()) files[relative(root, path)] = readFileSync(path, 'utf8');
   }
   return files;
 }
@@ -50,9 +53,14 @@ interface Run {
   readonly stderr: string;
 }
 
+function makeWorkDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  workDirs.push(dir);
+  return dir;
+}
+
 function copyFixture(name: string, side: 'before' | 'after'): string {
-  const root = mkdtempSync(join(tmpdir(), `data-type-in-contract-${name}-`));
-  workDirs.push(root);
+  const root = makeWorkDir(`data-type-in-contract-${name}-`);
   cpSync(join(fixtures, name, side), root, { recursive: true });
   return root;
 }
@@ -181,6 +189,53 @@ describe('a JSON column whose default document holds codecId and nativeType', ()
       tree: expectedTree('json-default-document', 'after'),
       document,
       documentInDts: true,
+    });
+  });
+});
+
+describe('a project whose directories are symbolic links', () => {
+  const name = 'postgres-extension-space';
+  const upgraded = { status: 0, stdout: '', stderr: '' };
+  const outcome = (run: Run, tree: Record<string, string>) => ({
+    status: run.status,
+    stdout: run.stdout,
+    stderr: run.stderr,
+    tree,
+  });
+
+  it('upgrades a migrations directory that is a link to a sibling directory', () => {
+    const root = copyFixture(name, 'before');
+    const elsewhere = makeWorkDir(`data-type-in-contract-${name}-elsewhere-`);
+    renameSync(join(root, 'migrations'), join(elsewhere, 'migrations'));
+    symlinkSync(join(elsewhere, 'migrations'), join(root, 'migrations'), 'dir');
+    const run = runScript(root);
+    expect({
+      ...outcome(run, { ...readTree(root), ...readTree(elsewhere) }),
+      linkKept: lstatSync(join(root, 'migrations')).isSymbolicLink(),
+    }).toEqual({ ...upgraded, tree: expectedTree(name, 'after'), linkKept: true });
+  });
+
+  it('upgrades a directory reachable through a link and through its own path once', () => {
+    const root = copyFixture(name, 'before');
+    renameSync(join(root, 'migrations'), join(root, 'db-history'));
+    symlinkSync(join(root, 'db-history'), join(root, 'migrations'), 'dir');
+    const run = runScript(root);
+    const expected = Object.fromEntries(
+      Object.entries(expectedTree(name, 'after')).map(([path, content]) => [
+        path.replace(/^migrations\//, 'db-history/'),
+        content,
+      ]),
+    );
+    expect(outcome(run, readTree(root))).toEqual({ ...upgraded, tree: expected });
+  });
+
+  it('stops at a link that points to its own parent', () => {
+    const root = copyFixture(name, 'before');
+    symlinkSync(join(root, 'migrations'), join(root, 'migrations', 'loop'), 'dir');
+    const run = runScript(root);
+    expect(outcome(run, readTree(root))).toEqual({
+      ...upgraded,
+      tree: expectedTree(name, 'after'),
     });
   });
 });

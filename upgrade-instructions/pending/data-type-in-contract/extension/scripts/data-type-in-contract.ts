@@ -25,6 +25,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -359,13 +360,25 @@ interface ProjectFiles {
   readonly leftovers: readonly string[];
 }
 
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function listFiles(root: string): ProjectFiles {
   const json: string[] = [];
   const migrationJson: string[] = [];
   const refs: string[] = [];
   const migrationTs: string[] = [];
   const leftovers: string[] = [];
+  const visited = new Set<string>();
   const visit = (dir: string): void => {
+    const realDir = realpathSync(dir);
+    if (visited.has(realDir)) return;
+    visited.add(realDir);
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
       compareCodeUnits(a.name, b.name),
     );
@@ -378,7 +391,7 @@ function listFiles(root: string): ProjectFiles {
         leftovers.push(path);
         continue;
       }
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() || (entry.isSymbolicLink() && isDirectory(path))) {
         if (!SKIPPED_DIRECTORIES.has(entry.name)) visit(path);
         continue;
       }
