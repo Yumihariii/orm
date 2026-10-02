@@ -209,6 +209,21 @@ describe('a run that stops partway', () => {
   }
 });
 
+describe('a contract.json that is not valid JSON', () => {
+  it('names the file, changes no file and exits 1', () => {
+    const root = copyFixture('postgres-extension-space', 'before');
+    const path = join(root, 'prisma/contract.json');
+    writeFileSync(path, readFileSync(path, 'utf8').slice(0, 100));
+    const before = readTree(root);
+    const run = runScript(root);
+    expect({ status: run.status, stderr: run.stderr, tree: readTree(root) }).toEqual({
+      status: 1,
+      stderr: 'prisma/contract.json: not valid JSON\n',
+      tree: before,
+    });
+  });
+});
+
 describe('a migration.ts that writes hashes as literals', () => {
   const oldHash = '3d2c56a2944685bd21b05bc8a8d73164397df51c014201902932fbe7e80ff1b8';
   const newHash = '4a96b488a4ce92b434e5f7d6607b6435c0955f0d36b0018077045787764240e6';
