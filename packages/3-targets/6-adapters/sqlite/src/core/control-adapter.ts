@@ -462,15 +462,15 @@ export class SqliteControlAdapter implements SqlControlAdapter<'sqlite'> {
     return result;
   }
 
-  /**
-   * Appends a ledger entry for `space`. See the `SqlControlAdapter.writeLedgerEntry` contract.
-   */
   async lockMarker(
     _driver: SqlControlDriverInstance<'sqlite'>,
     _space: string,
     _contract: Contract,
   ): Promise<void> {}
 
+  /**
+   * Appends a ledger entry for `space`. See the `SqlControlAdapter.writeLedgerEntry` contract.
+   */
   async writeLedgerEntry(
     driver: SqlControlDriverInstance<'sqlite'>,
     space: string,
