@@ -24,6 +24,8 @@ import {
   errorAdvanceRefArgConflict,
   errorContractArgConflict,
   errorContractValidationFailed,
+  errorSignRefsNotWritten,
+  type UnwrittenRef,
 } from '../../utils/cli-errors';
 import { closeQuietly, maskConnectionUrl } from '../../utils/command-helpers';
 import { defineOrmCommand } from '../define-command';
@@ -304,6 +306,48 @@ async function advanceExtensionRef(args: {
 }
 
 /**
+ * Writes one signed space's ref, and the app space's contract snapshot, after the markers are written. Any failure is returned as its message, so one ref that cannot be written does not stop the others.
+ */
+async function advanceSignedSpaceRef(args: {
+  readonly migrationsDir: string;
+  readonly appRefsDir: string;
+  readonly space: string;
+  readonly name: string;
+  readonly hash: string;
+  readonly contractIR: ContractIR;
+}): Promise<Result<string | undefined, { readonly reason: string; readonly cause: unknown }>> {
+  const isApp = args.space === APP_SPACE_ID;
+  const refsDir = isApp
+    ? args.appRefsDir
+    : spaceRefsDirectory(spaceMigrationDirectory(args.migrationsDir, args.space));
+  try {
+    const previousHash = await previousRefHash(refsDir, args.name);
+    const written = isApp
+      ? await advanceRefSafely({
+          refsDir,
+          migrationsDir: args.migrationsDir,
+          name: args.name,
+          hash: args.hash,
+          contractIR: args.contractIR,
+        })
+      : await advanceExtensionRef({
+          migrationsDir: args.migrationsDir,
+          space: args.space,
+          name: args.name,
+          hash: args.hash,
+        });
+    return written.ok
+      ? okResult(previousHash)
+      : notOkResult({ reason: written.failure.message, cause: written.failure });
+  } catch (error) {
+    return notOkResult({
+      reason: error instanceof Error ? error.message : String(error),
+      cause: error,
+    });
+  }
+}
+
+/**
  * Builds the command with its control-client factory injected, so tests mount
  * the same tree over a fake client instead of mocking the client module.
  */
@@ -322,7 +366,8 @@ export function createDbSignCommand(
         'its contract; pass --no-advance-ref to sign without touching any ref,\n' +
         'which is what a CI or deployment pipeline usually wants.\n' +
         'Exit codes: 0 = signed, 2 = the command could not run (unresolvable\n' +
-        'contract reference, no emitted contract, unreachable database),\n' +
+        'contract reference, no emitted contract, unreachable database), or it\n' +
+        'signed the database but could not write every ref,\n' +
         '4 = schema verification failed for a space,\n' +
         'or its marker changed while db sign ran; its signature was not written.',
       examples: [
@@ -472,34 +517,52 @@ export function createDbSignCommand(
         const spaces = signed.value.spaces;
 
         const advanced: (AdvancedRef & { readonly previousHash: string | undefined })[] = [];
+        const unwritten: (UnwrittenRef & { readonly cause: unknown })[] = [];
         if (advancement !== null) {
           for (const outcome of spaces) {
             if (!isSigned(outcome)) continue;
-            const hash = outcome.contract.storageHash;
-            const isApp = outcome.space === APP_SPACE_ID;
-            const refsDir = isApp
-              ? appRefsDirFor(ctx.config)
-              : spaceRefsDirectory(spaceMigrationDirectory(migrationsDir, outcome.space));
-            const previousHash = await previousRefHash(refsDir, advancement.name);
-            const written = isApp
-              ? await advanceRefSafely({
-                  refsDir,
-                  migrationsDir,
-                  name: advancement.name,
-                  hash,
-                  contractIR: advancement.contractIR,
-                })
-              : await advanceExtensionRef({
-                  migrationsDir,
-                  space: outcome.space,
-                  name: advancement.name,
-                  hash,
-                });
-            if (!written.ok) {
-              return notOk(normalizeError(written.failure));
+            const ref = {
+              space: outcome.space,
+              name: advancement.name,
+              hash: outcome.contract.storageHash,
+            };
+            const written = await advanceSignedSpaceRef({
+              ...ref,
+              migrationsDir,
+              appRefsDir: appRefsDirFor(ctx.config),
+              contractIR: advancement.contractIR,
+            });
+            if (written.ok) {
+              advanced.push({ ...ref, previousHash: written.value });
+            } else {
+              unwritten.push({ ...ref, ...written.failure });
             }
-            advanced.push({ space: outcome.space, name: advancement.name, hash, previousHash });
           }
+        }
+        if (unwritten.length > 0) {
+          return notOk(
+            normalizeError(
+              errorSignRefsNotWritten({
+                signedSpaces: spaces.filter(isSigned).map((outcome) => outcome.space),
+                unwrittenRefs: unwritten.map(({ space, name, hash, reason }) => ({
+                  space,
+                  name,
+                  hash,
+                  reason,
+                })),
+                advancedRefs: advanced.map(({ space, name, hash }) => ({ space, name, hash })),
+                rerunCommand: [
+                  '{bin} db sign',
+                  ...(contractRef === undefined ? [] : [`--contract "${contractRef}"`]),
+                  ...(args.flags.advanceRef === undefined
+                    ? []
+                    : [`--advance-ref ${args.flags.advanceRef}`]),
+                  ...(args.flags.db === undefined ? [] : ['--db <url>']),
+                ].join(' '),
+                cause: unwritten[0]?.cause,
+              }),
+            ),
+          );
         }
 
         const unsigned = spaces.filter((outcome) => !isSigned(outcome));

@@ -145,6 +145,57 @@ export function errorAdvanceRefArgConflict(options: {
   );
 }
 
+/** A ref `db sign` meant to advance, and why writing it or its snapshot failed. */
+export interface UnwrittenRef {
+  readonly space: string;
+  readonly name: string;
+  readonly hash: string;
+  readonly reason: string;
+}
+
+/**
+ * `db sign` wrote the markers, then failed to write one or more refs or their snapshots. The database is signed; running the command again writes the refs.
+ */
+export function errorSignRefsNotWritten(options: {
+  readonly signedSpaces: readonly string[];
+  readonly unwrittenRefs: readonly UnwrittenRef[];
+  readonly advancedRefs: readonly {
+    readonly space: string;
+    readonly name: string;
+    readonly hash: string;
+  }[];
+  readonly rerunCommand: string;
+  readonly cause: unknown;
+}): ActionableCliError {
+  const { signedSpaces, unwrittenRefs, rerunCommand } = options;
+  const quoted = signedSpaces.map((space) => `"${space}"`).join(', ');
+  const markers =
+    signedSpaces.length === 1
+      ? `the marker of space ${quoted} was written`
+      : `the markers of spaces ${quoted} were written`;
+  const refs = unwrittenRefs
+    .map((ref) => `ref "${ref.name}" of space "${ref.space}" (${ref.reason})`)
+    .join('; ');
+  const count = unwrittenRefs.length;
+  return new ActionableCliError(
+    'MIGRATION.SIGN_REFS_NOT_WRITTEN',
+    `Database signed, but ${count} ${count === 1 ? 'ref was' : 'refs were'} not written`,
+    {
+      why: `The database was signed: ${markers}. These refs were not written: ${refs}.`,
+      fix: `Fix what stopped the write, then run \`${rerunCommand}\` again: the markers already hold the contracts, so it writes only the refs.`,
+      nextActions: [
+        runCommandAction('Sign again to write the refs that were not written', rerunCommand),
+      ],
+      meta: {
+        signedSpaces,
+        unwrittenRefs,
+        advancedRefs: options.advancedRefs,
+      },
+      cause: options.cause,
+    },
+  );
+}
+
 export function errorRefSetHashNotInGraph(
   resolvedHash: string,
   reachableHashes: readonly string[],

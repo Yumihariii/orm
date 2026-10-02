@@ -1618,6 +1618,10 @@ A migration's `from` and `to` hashes are identical and it declares no data-trans
 
 After applying migrations, the runner introspected the database and the resulting schema does not satisfy the destination contract; the apply is rolled back. Runner-level failure during `db init`/`db update`/`db migrate`. Payload: `issues` (schema diff issues).
 
+### MIGRATION.SIGN_REFS_NOT_WRITTEN
+
+`db sign` wrote the database markers, so the database is signed, but it could not write one or more refs or the contract snapshot of the app space afterwards, for example because the refs directory is not writable. The command still tries every ref, and the error names each one it could not write and why. Fix what stopped the write and run `db sign` again with the same arguments: the markers already hold the contracts, so the second run writes only the refs. Payload: `signedSpaces`, `unwrittenRefs` (each with `space`, `name`, `hash`, `reason`), `advancedRefs`.
+
 ### MIGRATION.SNAPSHOT_MISSING
 
 A `--from` reference cannot produce a contract: either a ref name has no pointer file and the fallback hash is not a graph node (`viaRef: true`), or an explicit `--from <hash>` was given on an empty migration graph and names no ref (`viaRef: false`). Payload: `identifier`, `viaRef`. Also raised by `db sign` when a contract reference resolves to a hash but no migration produces that hash and the emitted contract does not match; that site has no meta.

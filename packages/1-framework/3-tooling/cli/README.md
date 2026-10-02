@@ -692,7 +692,7 @@ The command needs a `driver` in the config, as `db verify` does.
 2. **Read the markers**: the marker of every space is read before the schema is.
 3. **Verify each space**: each space's contract is checked against the live schema without strict mode.
 4. **Sign**: the family's `signSpaces` writes the marker of every space that verified, but only while the marker still holds what step 2 read. On PostgreSQL and SQLite it first takes the lock `migrate` takes (a transaction-scoped advisory lock per space on PostgreSQL, `BEGIN IMMEDIATE` on SQLite), and all markers are written in one transaction, so a failed write leaves every marker as it was. A marker that already holds the contract's hashes is left unchanged.
-5. **Advance refs**: each signed or unchanged space's `db` ref (or the `--advance-ref` name) is advanced to its contract hash, and the contract is written into that space's snapshot store. `--no-advance-ref` skips this step.
+5. **Advance refs**: each signed or unchanged space's `db` ref (or the `--advance-ref` name) is advanced to its contract hash, and the contract is written into that space's snapshot store. `--no-advance-ref` skips this step. A ref or snapshot that cannot be written does not undo the markers: the command still writes every other ref, then fails with `MIGRATION.SIGN_REFS_NOT_WRITTEN`, which says the database was signed, names each ref it could not write and why, and gives the `db sign` command to run again once the cause is fixed.
 
 A space that fails verification is not signed. Its differences are reported, the other spaces are still signed, and the command exits with code 4. A space whose marker another process, such as `migrate`, changed after step 2 is not signed either: its marker is left as that process wrote it, the other spaces are still signed, and the command exits with code 4. Running `db sign` again once the other process has finished signs it.
 
@@ -743,7 +743,7 @@ database  postgresql://localhost/app
 
 **Exit codes:**
 - `0`: every space signed or already signed
-- `2`: the command could not run (unresolvable contract reference, no emitted contract, unreachable database, missing driver or connection)
+- `2`: the command could not run (unresolvable contract reference, no emitted contract, unreachable database, missing driver or connection), or it signed the database but could not write every ref (`MIGRATION.SIGN_REFS_NOT_WRITTEN`)
 - `4`: schema verification failed for at least one space, or its marker changed while `db sign` ran; that space's signature was not written
 
 **Relationship to Other Commands:**
