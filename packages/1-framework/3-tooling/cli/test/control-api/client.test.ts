@@ -86,9 +86,9 @@ function createMockComponents() {
     }),
     signSpaces: async ({ spaces }: { readonly spaces: readonly SpaceToSign[] }) =>
       spaces.map(({ space, contract }) => ({
+        status: 'created',
         space,
         contract: { storageHash: contract.storage.storageHash, profileHash: contract.profileHash },
-        marker: { created: true, updated: false },
       })),
   } as unknown as ControlFamilyInstance<string, unknown>;
 

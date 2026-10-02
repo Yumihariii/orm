@@ -126,26 +126,32 @@ export interface SpaceToSign {
   readonly verifiedMarker: MarkerHashes | null;
 }
 
-/** A space whose marker now holds its contract's hashes. */
-export interface SpaceSigned {
-  readonly space: string;
-  readonly contract: MarkerHashes;
-  readonly marker: {
-    readonly created: boolean;
-    readonly updated: boolean;
-    readonly previous?: MarkerHashes;
-  };
-}
+/**
+ * A space whose marker now holds its contract's hashes: `created` when it had no marker, `updated` when it held the hashes in `previous`, `unchanged` when it already held the contract's.
+ */
+export type SpaceSigned =
+  | {
+      readonly status: 'created' | 'unchanged';
+      readonly space: string;
+      readonly contract: MarkerHashes;
+    }
+  | {
+      readonly status: 'updated';
+      readonly space: string;
+      readonly contract: MarkerHashes;
+      readonly previous: MarkerHashes;
+    };
 
-/** A space whose marker changed after the caller verified the space. Its marker was left as it was. */
-export interface SpaceMarkerChanged {
+/**
+ * A space whose marker did not hold `expected`, the hashes the caller read before it verified the space, when the family came to write it. `found` is what the marker held instead. The marker was left as it was.
+ */
+export interface SpaceMarkerConflict {
+  readonly status: 'conflict';
   readonly space: string;
   readonly contract: MarkerHashes;
-  readonly markerChanged: {
-    readonly verified: MarkerHashes | null;
-    readonly found: MarkerHashes | null;
-  };
+  readonly expected: MarkerHashes | null;
+  readonly found: MarkerHashes | null;
 }
 
 /** What signing did to one contract space's marker. */
-export type SpaceSignature = SpaceSigned | SpaceMarkerChanged;
+export type SpaceSignature = SpaceSigned | SpaceMarkerConflict;

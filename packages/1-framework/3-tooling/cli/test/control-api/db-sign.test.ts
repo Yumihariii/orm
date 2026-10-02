@@ -98,9 +98,9 @@ const driver = blindCast<ControlDriverInstance<string, string>, 'never queried'>
 
 function signedEverySpace(spaces: readonly SpaceToSign[]): SpaceSignature[] {
   return spaces.map(({ space: spaceId, contract }) => ({
+    status: 'created',
     space: spaceId,
     contract: { storageHash: contract.storage.storageHash, profileHash: contract.profileHash },
-    marker: { created: true, updated: false },
   }));
 }
 
@@ -133,12 +133,11 @@ describe('signContractSpaces', () => {
       signedEverySpace(spaces).map((signature) =>
         signature.space === 'app'
           ? {
+              status: 'conflict',
               space: 'app',
               contract: signature.contract,
-              markerChanged: {
-                verified: { storageHash: 'old-app', profileHash: 'old-app-profile' },
-                found: { storageHash: 'moved', profileHash: 'moved-profile' },
-              },
+              expected: { storageHash: 'old-app', profileHash: 'old-app-profile' },
+              found: { storageHash: 'moved', profileHash: 'moved-profile' },
             }
           : signature,
       ),
@@ -151,9 +150,28 @@ describe('signContractSpaces', () => {
       frameworkComponents: [],
     });
 
-    expect(result.assertOk().spaces.map((outcome) => [outcome.space, outcome.status])).toEqual([
-      ['app', 'conflict'],
-      ['pgvector', 'signed'],
+    expect(result.assertOk().spaces).toEqual([
+      {
+        space: 'app',
+        status: 'conflict',
+        contract: {
+          storageHash: appContract.storage.storageHash,
+          profileHash: appContract.profileHash,
+        },
+        marker: {
+          expected: { storageHash: 'old-app', profileHash: 'old-app-profile' },
+          found: { storageHash: 'moved', profileHash: 'moved-profile' },
+        },
+      },
+      {
+        space: 'pgvector',
+        status: 'signed',
+        contract: {
+          storageHash: extContract.storage.storageHash,
+          profileHash: extContract.profileHash,
+        },
+        marker: { created: true, updated: false },
+      },
     ]);
   });
 });

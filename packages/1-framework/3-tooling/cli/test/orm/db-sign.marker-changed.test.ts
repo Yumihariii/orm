@@ -81,8 +81,9 @@ describe('db sign when a marker changes while it runs', () => {
         ],
         meta: {
           space: 'app',
-          verifiedStorageHash: HASH_PREVIOUS,
+          expectedStorageHash: HASH_PREVIOUS,
           foundStorageHash: HASH_MOVED,
+          destinationStorageHash: HASH_A,
         },
       },
     ]);

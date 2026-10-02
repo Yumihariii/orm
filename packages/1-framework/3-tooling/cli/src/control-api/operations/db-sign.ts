@@ -5,8 +5,7 @@ import type {
   ControlExtensionDescriptor,
   ControlFamilyInstance,
   MarkerHashes,
-  SpaceMarkerChanged,
-  SpaceSigned,
+  SpaceSignature,
   SpaceToSign,
   VerifyDatabaseSchemaResult,
 } from '@internal/framework-components/control';
@@ -43,8 +42,25 @@ export interface ExecuteDbSignOptions<TFamilyId extends string, TTargetId extend
  * What `db sign` did with one contract space: `signed` when its marker was written, `unchanged` when the marker already held the contract's hashes, `failed` when the live schema does not satisfy the space's contract, `conflict` when another process wrote the marker after `db sign` read it. A `failed` or `conflict` space keeps its marker as it was.
  */
 export type DbSignSpaceOutcome =
-  | (SpaceSigned & { readonly status: 'signed' | 'unchanged' })
-  | (SpaceMarkerChanged & { readonly status: 'conflict' })
+  | {
+      readonly space: string;
+      readonly status: 'signed' | 'unchanged';
+      readonly contract: MarkerHashes;
+      readonly marker: {
+        readonly created: boolean;
+        readonly updated: boolean;
+        readonly previous?: MarkerHashes;
+      };
+    }
+  | {
+      readonly space: string;
+      readonly status: 'conflict';
+      readonly contract: MarkerHashes;
+      readonly marker: {
+        readonly expected: MarkerHashes | null;
+        readonly found: MarkerHashes | null;
+      };
+    }
   | {
       readonly space: string;
       readonly status: 'failed';
@@ -90,6 +106,30 @@ export interface SignContractSpacesOptions<TFamilyId extends string, TTargetId e
   readonly aggregate: ContractSpaceAggregate;
   readonly frameworkComponents: ReadonlyArray<TargetBoundComponentDescriptor<TFamilyId, TTargetId>>;
   readonly onProgress?: OnControlProgress;
+}
+
+function outcomeOf(signature: SpaceSignature): DbSignSpaceOutcome {
+  const { space, contract } = signature;
+  switch (signature.status) {
+    case 'created':
+      return { space, status: 'signed', contract, marker: { created: true, updated: false } };
+    case 'updated':
+      return {
+        space,
+        status: 'signed',
+        contract,
+        marker: { created: false, updated: true, previous: signature.previous },
+      };
+    case 'unchanged':
+      return { space, status: 'unchanged', contract, marker: { created: false, updated: false } };
+    case 'conflict':
+      return {
+        space,
+        status: 'conflict',
+        contract,
+        marker: { expected: signature.expected, found: signature.found },
+      };
+  }
 }
 
 function markerHashes(marker: ContractMarkerRecord | undefined): MarkerHashes | null {
@@ -170,11 +210,7 @@ export async function signContractSpaces<TFamilyId extends string, TTargetId ext
           schema: schemaOf(space),
         };
       }
-      if ('markerChanged' in signature) {
-        return { ...signature, status: 'conflict' };
-      }
-      const written = signature.marker.created || signature.marker.updated;
-      return { ...signature, status: written ? 'signed' : 'unchanged' };
+      return outcomeOf(signature);
     }),
   });
 }

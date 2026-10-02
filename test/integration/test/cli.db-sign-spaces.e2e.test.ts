@@ -316,7 +316,10 @@ withTempDir(({ createTempDir }) => {
       );
     }
 
-    function expectAppMarkerChanged(sign: Awaited<ReturnType<typeof runOnEngine>>) {
+    function expectAppMarkerChanged(
+      sign: Awaited<ReturnType<typeof runOnEngine>>,
+      appHash: string,
+    ) {
       expect(sign.presented?.diagnostics).toEqual([
         expect.objectContaining({
           code: 'MIGRATION.MARKER_CAS_FAILURE',
@@ -324,8 +327,9 @@ withTempDir(({ createTempDir }) => {
           summary: 'Marker of space "app" changed while db sign ran',
           meta: {
             space: 'app',
-            verifiedStorageHash: OLD_APP_HASH,
+            expectedStorageHash: OLD_APP_HASH,
             foundStorageHash: MOVED_APP_HASH,
+            destinationStorageHash: appHash,
           },
         }),
       ]);
@@ -366,7 +370,7 @@ withTempDir(({ createTempDir }) => {
               previous: OLD_EXT_HASH,
             },
           ]);
-          expectAppMarkerChanged(sign);
+          expectAppMarkerChanged(sign, appHash);
           expect(await postgresMarkers(connectionString)).toEqual({
             app: MOVED_APP_HASH,
             [TEST_SPACE_ID]: extHash,
@@ -425,7 +429,7 @@ withTempDir(({ createTempDir }) => {
               previous: OLD_EXT_HASH,
             },
           ]);
-          expectAppMarkerChanged(sign);
+          expectAppMarkerChanged(sign, appHash);
           const markers = db
             .prepare('SELECT space, core_hash FROM _prisma_marker ORDER BY space')
             .all();

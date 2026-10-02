@@ -136,7 +136,7 @@ describe('createMongoFamilyInstance', () => {
     }
   });
 
-  it('signSpaces() reports a space whose compare-and-swap update fails as changed', async () => {
+  it('signSpaces() reports a space whose compare-and-swap update fails as a conflict', async () => {
     const reads = [
       { storageHash: 'stale', profileHash: 'stale' },
       { storageHash: 'moved', profileHash: 'moved-profile' },
@@ -167,15 +167,14 @@ describe('createMongoFamilyInstance', () => {
 
     expect(signatures).toEqual([
       {
+        status: 'conflict',
         space: 'app',
         contract: {
           storageHash: contract.storage.storageHash,
           profileHash: contract.profileHash,
         },
-        markerChanged: {
-          verified: { storageHash: 'stale', profileHash: 'stale' },
-          found: { storageHash: 'moved', profileHash: 'moved-profile' },
-        },
+        expected: { storageHash: 'stale', profileHash: 'stale' },
+        found: { storageHash: 'moved', profileHash: 'moved-profile' },
       },
     ]);
   });
@@ -211,12 +210,18 @@ describe('createMongoFamilyInstance', () => {
       ],
     });
 
-    expect(signatures.map((s) => ['marker' in s ? s.marker : s.markerChanged, s.space])).toEqual([
-      [{ created: true, updated: false }, 'app'],
-      [
-        { created: false, updated: true, previous: { storageHash: 'old', profileHash: 'old' } },
-        'audit',
-      ],
+    expect(signatures).toEqual([
+      {
+        status: 'created',
+        space: 'app',
+        contract: { storageHash: contract.storage.storageHash, profileHash: contract.profileHash },
+      },
+      {
+        status: 'updated',
+        space: 'audit',
+        contract: { storageHash: contract.storage.storageHash, profileHash: contract.profileHash },
+        previous: { storageHash: 'old', profileHash: 'old' },
+      },
     ]);
     expect(writes).toEqual(['init app', 'update audit']);
   });
@@ -250,15 +255,14 @@ describe('createMongoFamilyInstance', () => {
 
     expect(signatures).toEqual([
       {
+        status: 'conflict',
         space: 'app',
         contract: {
           storageHash: contract.storage.storageHash,
           profileHash: contract.profileHash,
         },
-        markerChanged: {
-          verified: null,
-          found: { storageHash: 'moved', profileHash: 'moved-profile' },
-        },
+        expected: null,
+        found: { storageHash: 'moved', profileHash: 'moved-profile' },
       },
     ]);
     expect(writes).toEqual([]);

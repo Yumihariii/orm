@@ -109,12 +109,12 @@ describe('family instance signSpaces', () => {
 
           expect(signatures).toEqual([
             {
+              status: 'created',
               space: APP_SPACE_ID,
               contract: {
                 storageHash: validatedContract.storage.storageHash,
                 profileHash: validatedContract.profileHash,
               },
-              marker: { created: true, updated: false },
             },
           ]);
 
@@ -197,16 +197,13 @@ describe('family instance signSpaces', () => {
 
           expect(signatures).toEqual([
             {
+              status: 'updated',
               space: APP_SPACE_ID,
               contract: {
                 storageHash: validatedContract.storage.storageHash,
                 profileHash: validatedContract.profileHash,
               },
-              marker: {
-                created: false,
-                updated: true,
-                previous: { storageHash: 'old-hash', profileHash: 'old-profile-hash' },
-              },
+              previous: { storageHash: 'old-hash', profileHash: 'old-profile-hash' },
             },
           ]);
 
@@ -392,7 +389,7 @@ describe('family instance signSpaces', () => {
             driver,
             spaces: [{ space: APP_SPACE_ID, contract: validatedContract, verifiedMarker: null }],
           });
-          expect(first).toMatchObject({ marker: { created: true, updated: false } });
+          expect(first).toMatchObject({ status: 'created' });
 
           // Get the marker's updated_at timestamp
           const markerAfterFirst = await familyInstance.readMarker({ driver, space: APP_SPACE_ID });
@@ -411,7 +408,7 @@ describe('family instance signSpaces', () => {
               },
             ],
           });
-          expect(second).toMatchObject({ marker: { created: false, updated: false } });
+          expect(second).toMatchObject({ status: 'unchanged' });
 
           // Verify marker was not updated (updated_at should be the same)
           const markerAfterSecond = await familyInstance.readMarker({

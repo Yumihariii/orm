@@ -226,23 +226,28 @@ export function createMongoFamilyInstance(controlStack: ControlStack): MongoCont
     };
     const existing = await readHashes();
     if (!sameMarkerHashes(existing, verifiedMarker)) {
-      return { ...signed, markerChanged: { verified: verifiedMarker, found: existing } };
+      return { ...signed, status: 'conflict', expected: verifiedMarker, found: existing };
     }
     if (existing === null) {
       await controlAdapter.initMarker(driver, space, { storageHash, profileHash });
-      return { ...signed, marker: { created: true, updated: false } };
+      return { ...signed, status: 'created' };
     }
     if (existing.storageHash === storageHash && existing.profileHash === profileHash) {
-      return { ...signed, marker: { created: false, updated: false } };
+      return { ...signed, status: 'unchanged' };
     }
     const updated = await controlAdapter.updateMarker(driver, space, existing.storageHash, {
       storageHash,
       profileHash,
     });
     if (!updated) {
-      return { ...signed, markerChanged: { verified: verifiedMarker, found: await readHashes() } };
+      return {
+        ...signed,
+        status: 'conflict',
+        expected: verifiedMarker,
+        found: await readHashes(),
+      };
     }
-    return { ...signed, marker: { created: false, updated: true, previous: existing } };
+    return { ...signed, status: 'updated', previous: existing };
   }
 
   return {

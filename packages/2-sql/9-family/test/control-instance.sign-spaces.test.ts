@@ -115,19 +115,12 @@ describe('sql family signSpaces', () => {
     });
 
     expect(signatures).toEqual([
+      { status: 'created', space: APP_SPACE_ID, contract: appHashes },
       {
-        space: APP_SPACE_ID,
-        contract: appHashes,
-        marker: { created: true, updated: false },
-      },
-      {
+        status: 'updated',
         space: EXT_SPACE_ID,
         contract: { storageHash: EXT_HASH, profileHash: 'ext-profile' },
-        marker: {
-          created: false,
-          updated: true,
-          previous: { storageHash: 'old-ext', profileHash: 'old-ext-profile' },
-        },
+        previous: { storageHash: 'old-ext', profileHash: 'old-ext-profile' },
       },
     ]);
     expect(store.events).toEqual([
@@ -153,17 +146,11 @@ describe('sql family signSpaces', () => {
       spaces: [{ space: APP_SPACE_ID, contract: appContract, verifiedMarker: appHashes }],
     });
 
-    expect(signatures).toEqual([
-      {
-        space: APP_SPACE_ID,
-        contract: appHashes,
-        marker: { created: false, updated: false },
-      },
-    ]);
+    expect(signatures).toEqual([{ status: 'unchanged', space: APP_SPACE_ID, contract: appHashes }]);
     expect(store.events).toEqual(['BEGIN', 'lock', 'COMMIT']);
   });
 
-  it('reports a space that loses the compare-and-swap as changed, and signs the other spaces', async () => {
+  it('reports a space that loses the compare-and-swap as a conflict, and signs the other spaces', async () => {
     const store = createMarkerStore(
       {
         [APP_SPACE_ID]: { storageHash: 'old-app', profileHash: 'old-app-profile' },
@@ -190,21 +177,17 @@ describe('sql family signSpaces', () => {
 
     expect(signatures).toEqual([
       {
+        status: 'updated',
         space: APP_SPACE_ID,
         contract: appHashes,
-        marker: {
-          created: false,
-          updated: true,
-          previous: { storageHash: 'old-app', profileHash: 'old-app-profile' },
-        },
+        previous: { storageHash: 'old-app', profileHash: 'old-app-profile' },
       },
       {
+        status: 'conflict',
         space: EXT_SPACE_ID,
         contract: { storageHash: EXT_HASH, profileHash: 'ext-profile' },
-        markerChanged: {
-          verified: { storageHash: 'old-ext', profileHash: 'old-ext-profile' },
-          found: { storageHash: 'moved-mid-write', profileHash: 'moved-profile' },
-        },
+        expected: { storageHash: 'old-ext', profileHash: 'old-ext-profile' },
+        found: { storageHash: 'moved-mid-write', profileHash: 'moved-profile' },
       },
     ]);
     expect(store.events).toEqual([
@@ -239,17 +222,16 @@ describe('sql family signSpaces', () => {
 
     expect(signatures).toEqual([
       {
+        status: 'created',
         space: EXT_SPACE_ID,
         contract: { storageHash: EXT_HASH, profileHash: 'ext-profile' },
-        marker: { created: true, updated: false },
       },
       {
+        status: 'conflict',
         space: APP_SPACE_ID,
         contract: appHashes,
-        markerChanged: {
-          verified: { storageHash: 'old-app', profileHash: 'old-app-profile' },
-          found: { storageHash: 'moved-by-migrate', profileHash: 'moved-profile' },
-        },
+        expected: { storageHash: 'old-app', profileHash: 'old-app-profile' },
+        found: { storageHash: 'moved-by-migrate', profileHash: 'moved-profile' },
       },
     ]);
     expect(store.events).toEqual(['BEGIN', 'lock', `insert ${EXT_SPACE_ID}`, 'COMMIT']);
@@ -259,7 +241,7 @@ describe('sql family signSpaces', () => {
     });
   });
 
-  it('reports a marker written after a verification that found none as changed', async () => {
+  it('reports a marker written after a verification that found none as a conflict', async () => {
     const store = createMarkerStore({
       [APP_SPACE_ID]: { storageHash: 'written-by-migrate', profileHash: 'migrate-profile' },
     });
@@ -271,12 +253,11 @@ describe('sql family signSpaces', () => {
 
     expect(signatures).toEqual([
       {
+        status: 'conflict',
         space: APP_SPACE_ID,
         contract: appHashes,
-        markerChanged: {
-          verified: null,
-          found: { storageHash: 'written-by-migrate', profileHash: 'migrate-profile' },
-        },
+        expected: null,
+        found: { storageHash: 'written-by-migrate', profileHash: 'migrate-profile' },
       },
     ]);
     expect(store.markers()).toEqual({

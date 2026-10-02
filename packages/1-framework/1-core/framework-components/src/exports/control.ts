@@ -73,7 +73,7 @@ export type {
   IntrospectSchemaResult,
   MarkerHashes,
   OperationContext,
-  SpaceMarkerChanged,
+  SpaceMarkerConflict,
   SpaceSignature,
   SpaceSigned,
   SpaceToSign,

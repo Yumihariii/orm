@@ -739,7 +739,7 @@ database  postgresql://localhost/app
 }
 ```
 
-`status` is `signed`, `unchanged`, `failed` or `conflict`. A failed space carries `contract: { storageHash }` and `schema`, the schema verification result, in place of `marker`; `ok` is then `false` and `summary` names the failed and the signed spaces, for example `Database schema does not satisfy contract for space "app"; signed "pgvector"`. Each failed space also produces one `CONTRACT.SCHEMA_VERIFICATION_FAILED` diagnostic with `space` in its meta. A space in conflict carries `markerChanged: { verified, found }`, the marker hashes `db sign` read and the ones it found when it came to write, in place of `marker`; `summary` then says, for example, `Marker of space "app" changed while db sign ran; signed "pgvector"`, and the space produces one `MIGRATION.MARKER_CAS_FAILURE` diagnostic with `space`, `verifiedStorageHash` and `foundStorageHash` in its meta.
+`status` is `signed`, `unchanged`, `failed` or `conflict`. A failed space carries `contract: { storageHash }` and `schema`, the schema verification result, in place of `marker`; `ok` is then `false` and `summary` names the failed and the signed spaces, for example `Database schema does not satisfy contract for space "app"; signed "pgvector"`. Each failed space also produces one `CONTRACT.SCHEMA_VERIFICATION_FAILED` diagnostic with `space` in its meta. A space in conflict carries `marker: { expected, found }`, the marker hashes `db sign` read and the ones it found when it came to write; `summary` then says, for example, `Marker of space "app" changed while db sign ran; signed "pgvector"`, and the space produces one `MIGRATION.MARKER_CAS_FAILURE` diagnostic with `space`, `expectedStorageHash`, `foundStorageHash` and `destinationStorageHash` in its meta.
 
 **Exit codes:**
 - `0`: every space signed or already signed
@@ -777,7 +777,7 @@ interface ControlFamilyInstance {
 }
 ```
 
-`signSpaces` writes the marker of each space it is given with its contract's hashes, if the marker still holds `verifiedMarker`, and returns one `{ space, contract, marker }` per space, or `{ space, contract, markerChanged }` for a space whose marker no longer holds it when it is read or when it is written. It does not verify; the command verifies every space first, and gives the spaces in the order `migrate` applies them, extension spaces first. The SQL family implements it through `SqlControlAdapter.withTransaction` and `SqlControlAdapter.lockMarker`, which takes the one lock the migration runner holds while it reads and writes markers, whatever the space. The Mongo family writes each marker on its own.
+`signSpaces` writes the marker of each space it is given with its contract's hashes, if the marker still holds `verifiedMarker`, and returns one `SpaceSignature` per space: `{ status, space, contract }`, where `status` is `created`, `updated` (with `previous`, the hashes the marker held) or `unchanged`, or `{ status: 'conflict', space, contract, expected, found }` for a space whose marker no longer holds `verifiedMarker` when it is read or when it is written. It does not verify; the command verifies every space first, and gives the spaces in the order `migrate` applies them, extension spaces first. The SQL family implements it through `SqlControlAdapter.withTransaction` and `SqlControlAdapter.lockMarker`, which takes the one lock the migration runner holds while it reads and writes markers, whatever the space. The Mongo family writes each marker on its own.
 
 ### `prisma db init`
 

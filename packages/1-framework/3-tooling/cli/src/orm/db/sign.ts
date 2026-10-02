@@ -156,11 +156,11 @@ function spaceNode(outcome: DbSignSpaceOutcome): TreeNode {
         status: 'error',
         children: [
           {
-            label: `marker when verified: ${outcome.markerChanged.verified?.storageHash ?? 'none'}`,
+            label: `marker when verified: ${outcome.marker.expected?.storageHash ?? 'none'}`,
             status: 'error',
           },
           {
-            label: `marker now: ${outcome.markerChanged.found?.storageHash ?? 'none'}`,
+            label: `marker now: ${outcome.marker.found?.storageHash ?? 'none'}`,
             status: 'error',
           },
         ],
@@ -202,12 +202,12 @@ function signSummary(spaces: readonly DbSignSpaceOutcome[]): string {
 function markerConflictDiagnostic(
   outcome: Extract<DbSignSpaceOutcome, { readonly status: 'conflict' }>,
 ): Diagnostic {
-  const { verified, found } = outcome.markerChanged;
+  const { expected, found } = outcome.marker;
   return {
     code: 'MIGRATION.MARKER_CAS_FAILURE',
     severity: 'error',
     summary: `Marker of space "${outcome.space}" changed while db sign ran`,
-    why: `Another process, such as migrate, changed the marker from ${verified?.storageHash ?? 'no marker'} to ${found?.storageHash ?? 'no marker'} after db sign read it, so db sign did not sign the space.`,
+    why: `Another process, such as migrate, changed the marker from ${expected?.storageHash ?? 'no marker'} to ${found?.storageHash ?? 'no marker'} after db sign read it, so db sign did not sign the space.`,
     nextActions: [
       {
         kind: 'run-command',
@@ -217,8 +217,9 @@ function markerConflictDiagnostic(
     ],
     meta: {
       space: outcome.space,
-      verifiedStorageHash: verified?.storageHash ?? null,
+      expectedStorageHash: expected?.storageHash ?? null,
       foundStorageHash: found?.storageHash ?? null,
+      destinationStorageHash: outcome.contract.storageHash,
     },
   };
 }
