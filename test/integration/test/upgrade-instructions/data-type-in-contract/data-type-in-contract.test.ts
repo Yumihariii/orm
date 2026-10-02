@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'pathe';
@@ -179,6 +187,30 @@ describe('a project already in the new format', () => {
       }).toEqual({ status: 0, stdout: '', stderr: '', tree: expectedTree(name, 'after') });
     });
   }
+
+  it('leaves a new-format contract unchanged whatever its stored hash', () => {
+    const root = copyFixture('sqlite-defaults', 'after');
+    const contract = JSON.parse(readFileSync(join(root, 'src/prisma/contract.json'), 'utf8'));
+    const { storageHash: _storageHash, ...storage } = contract.storage;
+    const placeholder = `${JSON.stringify({ ...contract, storage: { ...storage, storageHash: 'sha256:test-fixture' } }, null, 2)}\n`;
+    const withoutHash = `${JSON.stringify({ ...contract, storage }, null, 2)}\n`;
+    mkdirSync(join(root, 'test'));
+    writeFileSync(join(root, 'test/placeholder-hash.contract.json'), placeholder);
+    writeFileSync(join(root, 'test/no-hash.contract.json'), withoutHash);
+    const before = readTree(root);
+    const run = runScript(root);
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(root),
+    }).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      tree: before,
+    });
+  });
 
   it('is unchanged by a second run', () => {
     const first = upgrade('postgres-extension-space');

@@ -787,7 +787,7 @@ function main({ root, dataTypes, errors }: Options): number {
       stops.push(
         `${display(path)}: unknown codec ${codecId}; name its data type with --data-type ${codecId}=<data type id>`,
       );
-    if (!rewrite.changed && recomputes) continue;
+    if (!rewrite.changed) continue;
     if (!recomputes)
       notices.push(`${display(path)}: stored hash did not recompute; rehashed from content`);
     const newHash = computeStorageHash(rewrite.contract);
