@@ -1,11 +1,13 @@
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   cpSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -224,6 +226,19 @@ describe('a run that stops partway', () => {
       );
     });
   }
+});
+
+describe('a file the script rewrites', () => {
+  it('keeps its file mode', () => {
+    const root = copyFixture('postgres-extension-space', 'before');
+    const path = join(root, 'migrations/app/20260101T0000_initial/migration.ts');
+    chmodSync(path, 0o755);
+    const run = runScript(root);
+    expect({ status: run.status, mode: statSync(path).mode & 0o777 }).toEqual({
+      status: 0,
+      mode: 0o755,
+    });
+  });
 });
 
 describe('a contract.json that is not valid JSON', () => {

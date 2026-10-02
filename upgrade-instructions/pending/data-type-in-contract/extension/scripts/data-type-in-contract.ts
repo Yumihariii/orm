@@ -20,12 +20,14 @@
  */
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
@@ -947,16 +949,22 @@ function temporaryPath(path: string): string {
   return join(dirname(path), `.${basename(path)}${TEMPORARY_SUFFIX}`);
 }
 
+function writeWithModeOf(path: string, text: string, modeSource: string): void {
+  writeFileSync(path, text);
+  if (existsSync(modeSource)) chmodSync(path, statSync(modeSource).mode & 0o7777);
+}
+
 function writeFile(path: string, text: string): void {
   const temporary = temporaryPath(path);
-  writeFileSync(temporary, text);
+  writeWithModeOf(temporary, text, path);
   renameSync(temporary, path);
 }
 
-function writeDirectory(dir: string, files: ReadonlyMap<string, string>): void {
+function writeDirectory(dir: string, files: ReadonlyMap<string, string>, sourceDir: string): void {
   const temporary = temporaryPath(dir);
   mkdirSync(temporary);
-  for (const [name, text] of files) writeFileSync(join(temporary, name), text);
+  for (const [name, text] of files)
+    writeWithModeOf(join(temporary, name), text, join(sourceDir, name));
   renameSync(temporary, dir);
 }
 
@@ -1039,6 +1047,7 @@ function main({ root, dataTypes, errors }: Options): number {
       hashes.set(plan.oldHash, plan.newHash);
 
   const newDirectories = new Map<string, Map<string, string>>();
+  const directorySources = new Map<string, string>();
   const sourceDirectories = new Set<string>();
   const removals = new Set<string>();
   const snapshotRewrites: [string, string][] = [];
@@ -1082,6 +1091,7 @@ function main({ root, dataTypes, errors }: Options): number {
       continue;
     }
     newDirectories.set(newDir, content);
+    directorySources.set(newDir, oldDir);
   }
   for (const [dir, content] of newDirectories) {
     if (sourceDirectories.has(dir) || !existsSync(dir)) continue;
@@ -1138,7 +1148,8 @@ function main({ root, dataTypes, errors }: Options): number {
 
   try {
     for (const path of files.leftovers) rmSync(path, { recursive: true, force: true });
-    for (const [dir, content] of newDirectories) writeDirectory(dir, content);
+    for (const [dir, content] of newDirectories)
+      writeDirectory(dir, content, directorySources.get(dir) ?? dir);
     for (const [path, text] of snapshotRewrites) writeFile(path, text);
     for (const [path, text] of referenceWrites) writeFile(path, text);
     for (const [path, text] of contractWrites) writeFile(path, text);
