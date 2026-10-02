@@ -150,6 +150,10 @@ export function documentScope(records: TopLevelRecords, parent: Scope | undefine
   return new DocumentScope(records, parent);
 }
 
+export function namedTypeBaseScope(records: TopLevelRecords, parent: Scope | undefined): Scope {
+  return new DocumentScope({ ...records, namedTypes: {} }, parent);
+}
+
 export function namespaceScope(namespace: NamespaceSymbol, parent: Scope): Scope {
   return new NamespaceScope(namespace, parent);
 }

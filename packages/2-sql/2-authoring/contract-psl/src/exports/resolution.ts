@@ -7,8 +7,8 @@ export {
 export { buildEntityTypesByDiscriminator } from '../interpreter';
 export {
   type ColumnDescriptor,
+  instantiateFieldTypeConstructor,
   type ResolveFieldTypeResult,
-  resolveFieldTypeDescriptor,
 } from '../psl-column-resolution';
 export {
   applyBackrelationCandidates,

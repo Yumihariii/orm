@@ -5,16 +5,16 @@ import type {
 import type { BlockSpecContext, PslBlockSpecDescriptor } from '@internal/psl-parser';
 import { blockAttribute, optional, str, structBlock } from '@internal/psl-parser';
 import { hasPslInterpreter } from '@internal/psl-parser/interpret';
+import { bindPslSchema } from '@internal/psl-parser/test';
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
 import { prismaContract } from '../src/exports/provider';
-import { interpretPslDocumentToSqlContract } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createPostgresTestContext,
+  interpretSqlContract,
   postgresScalarTypeDescriptors,
   postgresTarget,
-  symbolTableInputFromParseArgs,
 } from './fixtures';
 
 const SCHEMA = `// use prisma-8
@@ -67,8 +67,7 @@ describe('block spec context', () => {
     const seen: BlockSpecContext[] = [];
     const dataTypes = stackDataTypes();
 
-    const result = interpretPslDocumentToSqlContract({
-      ...symbolTableInputFromParseArgs({ schema: SCHEMA, sourceId: 'schema.prisma' }),
+    const result = interpretSqlContract(SCHEMA, {
       target: postgresTarget,
       scalarColumnDescriptors: postgresScalarTypeDescriptors,
       composedExtensionContracts: new Map(),
@@ -102,7 +101,7 @@ describe('block spec context', () => {
     if (!hasPslInterpreter(source)) throw new Error('expected an interpret-capable source');
 
     const result = source.interpret(
-      symbolTableInputFromParseArgs({ schema: SCHEMA, sourceId: 'schema.prisma' }),
+      bindPslSchema(SCHEMA, { sourceId: 'schema.prisma', context }),
       context,
     );
 

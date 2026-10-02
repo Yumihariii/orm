@@ -42,7 +42,7 @@ const modelContext = {
   defaultFunctionRegistry: new Map(),
   dataTypes: postgresDataTypeSupport,
 };
-const fieldContext = { ...modelContext, field };
+const fieldContext = { ...modelContext, field, typeResolution: undefined };
 const blockContext = { symbols: symbolTable, block, dataTypes: postgresDataTypeSupport };
 
 type Parameters = Readonly<Record<string, { readonly type: InspectableArgType<never> }>>;

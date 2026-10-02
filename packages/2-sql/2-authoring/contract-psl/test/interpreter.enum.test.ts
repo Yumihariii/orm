@@ -11,13 +11,11 @@ import {
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
 import { withDescriptors } from '../../contract-ts/test/with-descriptors';
-import {
-  type InterpretPslDocumentToSqlContractInput,
-  interpretPslDocumentToSqlContract,
-} from '../src/interpreter';
+import type { InterpretPslDocumentToSqlContractInput } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createBuiltinLikeControlMutationDefaults,
+  interpretSqlContract,
   postgresCodecLookup,
   postgresEnumInferenceCodecs,
   postgresScalarTypeDescriptors,
@@ -26,7 +24,6 @@ import {
   sqliteEnumInferenceCodecs,
   sqliteScalarColumnDescriptors,
   sqliteTarget,
-  symbolTableInputFromParseArgs,
   testEnumEntityContributions,
   testEnumPslBlockDescriptor,
   testRenderCheckExpressions,
@@ -83,12 +80,7 @@ const builtinControlMutationDefaults = createBuiltinLikeControlMutationDefaults(
 
 function interpret(schema: string, overrides?: Partial<InterpretPslDocumentToSqlContractInput>) {
   const contributions = overrides?.authoringContributions ?? authoringContributions;
-  const document = symbolTableInputFromParseArgs({
-    schema,
-    sourceId: 'schema.prisma',
-  });
-  return interpretPslDocumentToSqlContract({
-    ...document,
+  return interpretSqlContract(schema, {
     target: postgresTarget,
     scalarColumnDescriptors: postgresScalarTypeDescriptors,
     composedExtensionContracts: new Map(),

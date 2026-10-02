@@ -11,6 +11,7 @@ import { interpretExtensionBlocks } from '../src/block-spec/interpret';
 import type { BlockSpecContext } from '../src/block-spec/types';
 import { parse } from '../src/parse';
 import { buildSymbolTable } from '../src/symbol-table';
+import { binderContext } from './support';
 
 function dataTypeSupport(): DataTypeSupport {
   return { entries: {}, lookup: createDataTypeLookup([]) };
@@ -54,11 +55,10 @@ describe('block spec context', () => {
     const { binder } = createBinder({
       sources,
       symbolTable,
-      typeConstructors: {},
-      attributeSpecs: { model: {}, field: {} },
-      defaultFunctionRegistry: new Map(),
-      dataTypes: binderDataTypes,
-      pslBlockDescriptors: { policy_select: recordingDescriptor(bound) },
+      context: binderContext({
+        dataTypes: binderDataTypes,
+        pslBlockDescriptors: { policy_select: recordingDescriptor(bound) },
+      }),
     });
     const { diagnostics } = interpretExtensionBlocks({
       symbolTable,

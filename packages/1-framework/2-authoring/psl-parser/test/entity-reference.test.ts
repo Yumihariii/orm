@@ -18,6 +18,7 @@ import { buildSymbolTable } from '../src/symbol-table';
 import { ModelAttributeAst } from '../src/syntax/ast/attributes';
 import { IdentifierAst } from '../src/syntax/ast/identifier';
 import { SyntaxNode } from '../src/syntax/red';
+import { binderContext } from './support';
 
 function fixture(value: string, local = true) {
   const members = [
@@ -50,25 +51,24 @@ function fixture(value: string, local = true) {
   const { binder, diagnostics: binderDiagnostics } = createBinder({
     sources,
     symbolTable,
-    typeConstructors: {},
-    attributeSpecs: {
-      model: {
-        test: () =>
-          modelAttribute('test', {
-            documentation: 'fixture',
-            positional: [
-              {
-                key: 'model',
-                type: oneOf(entityRef({ kind: 'model' }), list(entityRef({ kind: 'model' }))),
-                documentation: 'fixture',
-              },
-            ],
-          }),
+    context: binderContext({
+      attributeSpecs: {
+        model: {
+          test: () =>
+            modelAttribute('test', {
+              documentation: 'fixture',
+              positional: [
+                {
+                  key: 'model',
+                  type: oneOf(entityRef({ kind: 'model' }), list(entityRef({ kind: 'model' }))),
+                  documentation: 'fixture',
+                },
+              ],
+            }),
+        },
+        field: {},
       },
-      field: {},
-    },
-    defaultFunctionRegistry: new Map(),
-    dataTypes: EMPTY_DATA_TYPES,
+    }),
   });
   for (const syntax of document.syntax.descendants()) {
     if (!(syntax instanceof SyntaxNode)) continue;
@@ -115,11 +115,9 @@ describe('syntax-scoped entity resolution', () => {
     const { binder, diagnostics: binderDiagnostics } = createBinder({
       sources,
       symbolTable: result.symbolTable,
-      typeConstructors: {},
-      attributeSpecs: { model: {}, field: {} },
-      defaultFunctionRegistry: new Map(),
-      dataTypes: EMPTY_DATA_TYPES,
-      pslBlockDescriptors: { permission: descriptor },
+      context: binderContext({
+        pslBlockDescriptors: { permission: descriptor },
+      }),
     });
     expect(binderDiagnostics).toEqual([]);
     const namespace = result.symbolTable.topLevel.namespaces['Local'];
@@ -211,21 +209,20 @@ describe('syntax-scoped entity resolution', () => {
       const { binder } = createBinder({
         sources,
         symbolTable,
-        typeConstructors: {},
-        attributeSpecs: {
-          model: {
-            test: () =>
-              modelAttribute('test', {
-                documentation: 'fixture',
-                positional: [
-                  { key: 'model', type: entityRef({ kind: 'model' }), documentation: 'fixture' },
-                ],
-              }),
+        context: binderContext({
+          attributeSpecs: {
+            model: {
+              test: () =>
+                modelAttribute('test', {
+                  documentation: 'fixture',
+                  positional: [
+                    { key: 'model', type: entityRef({ kind: 'model' }), documentation: 'fixture' },
+                  ],
+                }),
+            },
+            field: {},
           },
-          field: {},
-        },
-        defaultFunctionRegistry: new Map(),
-        dataTypes: EMPTY_DATA_TYPES,
+        }),
       });
       const selfModel = symbolTable.topLevel.models['Owner'];
       if (!selfModel) throw new Error('Missing owner');

@@ -1,7 +1,13 @@
+import { emptyCodecLookup } from '@internal/framework-components/codec';
 import { assembleAuthoringContributions } from '@internal/framework-components/control';
-import { buildSymbolTable } from '@internal/psl-parser';
-import { parse } from '@internal/psl-parser/syntax';
+import { withSeedDiagnostics } from '@internal/psl-parser/interpret';
+import { bindPslSchema } from '@internal/psl-parser/test';
 import { interpretPslDocumentToSqlContract } from '@internal/sql-contract-psl';
+import {
+  describeUnsupportedSqlAttribute,
+  sqlAttributeSpecs,
+} from '@internal/sql-contract-psl/attribute-specs';
+import { sqlContextInput } from '@internal/sql-contract-psl/test';
 import { describe, expect, it } from 'vitest';
 import {
   postgresAuthoringEntityTypes,
@@ -25,28 +31,47 @@ const assembled = assembleAuthoringContributions([
 ]);
 
 function interpret(source: string) {
-  const { document, sources } = parse(source, SOURCE_ID);
-  const { symbolTable } = buildSymbolTable({ documents: [document], sources });
-  return interpretPslDocumentToSqlContract({
-    documents: [document],
-    dataTypes: postgresDataTypeSupport,
-    symbolTable,
-    sources,
-    target: {
-      kind: 'target',
-      familyId: 'sql',
-      targetId: 'postgres',
-      id: 'postgres',
-      version: '0.0.1',
-      capabilities: {},
-      defaultNamespaceId: 'public',
+  const bound = bindPslSchema(source, {
+    sourceId: SOURCE_ID,
+    context: {
+      composedExtensions: [],
+      composedExtensionContracts: new Map(),
+      authoringContributions: {
+        ...assembled,
+        type: {
+          Int: { kind: 'typeConstructor', output: { codecId: 'pg/int4@1', nativeType: 'int4' } },
+          ...assembled.type,
+        },
+        attributeSpecs: sqlAttributeSpecs,
+      },
+      pslDiagnostics: { describeUnsupportedAttribute: describeUnsupportedSqlAttribute },
+      codecLookup: { ...emptyCodecLookup, descriptorFor: () => undefined },
+      controlMutationDefaults: { defaultFunctionRegistry: new Map(), generatorDescriptors: [] },
+      dataTypes: postgresDataTypeSupport,
+      resolvedInputs: [],
+      capabilities: { sql: { scalarList: true } },
     },
-    scalarColumnDescriptors: new Map([['Int', { codecId: 'pg/int4@1', nativeType: 'int4' }]]),
-    authoringContributions: assembled,
-    composedExtensionContracts: new Map(),
-    createNamespace: postgresCreateNamespace,
-    capabilities: { sql: { scalarList: true } },
   });
+  return withSeedDiagnostics(
+    interpretPslDocumentToSqlContract({
+      documents: bound.documents,
+      sources: bound.sources,
+      symbolTable: bound.symbolTable,
+      binder: bound.binder,
+      ...sqlContextInput(bound.context),
+      target: {
+        kind: 'target',
+        familyId: 'sql',
+        targetId: 'postgres',
+        id: 'postgres',
+        version: '0.0.1',
+        capabilities: {},
+        defaultNamespaceId: 'public',
+      },
+      createNamespace: postgresCreateNamespace,
+    }),
+    bound.seedDiagnostics,
+  );
 }
 
 function schemaWith(policy: string): string {

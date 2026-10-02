@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createTestSqlNamespace } from '../../../1-core/contract/test/test-support';
-import { interpretPslDocumentToSqlContract } from '../src/interpreter';
 import { fixtureDataTypeSupport } from './fixture-data-types';
 import {
   createBuiltinLikeControlMutationDefaults,
+  interpretSqlContract,
   postgresCodecLookup,
   postgresNativeScalarTypeDescriptors,
   postgresScalarAuthoringTypes,
   postgresTarget,
-  symbolTableInputFromParseArgs,
 } from './fixtures';
 
 const baseInput = {
@@ -31,10 +30,8 @@ function expectDiagnosticForSchema(
   schema: string,
   diagnostic: { readonly code: string; readonly message?: string },
 ): void {
-  const document = symbolTableInputFromParseArgs({ schema, sourceId: 'schema.prisma' });
-  const result = interpretPslDocumentToSqlContract({
+  const result = interpretSqlContract(schema, {
     ...baseInput,
-    ...document,
     controlMutationDefaults: builtinControlMutationDefaults,
   });
 
@@ -56,14 +53,10 @@ describe('interpretPslDocumentToSqlContract list-column defaults', () => {
     ['String?[]?', '["alpha", null]', ['alpha', null]],
     ['Int?[]', '[1, null, 2]', [1, null, 2]],
   ])('lowers %s defaults %s through the typed literal pipeline', (type, literal, value) => {
-    const result = interpretPslDocumentToSqlContract({
-      ...baseInput,
-      ...symbolTableInputFromParseArgs({
-        schema: `model Post {\n id Int @id\n tags ${type} @default(${literal})\n}`,
-        sourceId: 'schema.prisma',
-      }),
-      controlMutationDefaults: builtinControlMutationDefaults,
-    });
+    const result = interpretSqlContract(
+      `model Post {\n id Int @id\n tags ${type} @default(${literal})\n}`,
+      { ...baseInput, controlMutationDefaults: builtinControlMutationDefaults },
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.storage).toMatchObject({
@@ -107,15 +100,13 @@ describe('interpretPslDocumentToSqlContract list-column defaults', () => {
   ])(
     'lowers the storage default %s on a list field with no diagnostic',
     (attribute, expression) => {
-      const document = symbolTableInputFromParseArgs({
-        schema: `model Post {\n  id Int @id\n  tags String[] @default(${attribute})\n}\n`,
-        sourceId: 'schema.prisma',
-      });
-      const result = interpretPslDocumentToSqlContract({
-        ...baseInput,
-        ...document,
-        controlMutationDefaults: builtinControlMutationDefaults,
-      });
+      const result = interpretSqlContract(
+        `model Post {\n  id Int @id\n  tags String[] @default(${attribute})\n}\n`,
+        {
+          ...baseInput,
+          controlMutationDefaults: builtinControlMutationDefaults,
+        },
+      );
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.storage).toMatchObject({

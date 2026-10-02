@@ -1,10 +1,4 @@
 import type {
-  AuthoringContributions,
-  AuthoringTypeConstructorDescriptor,
-  DataTypeSupport,
-} from '@internal/framework-components/authoring';
-import type { ControlMutationDefaultRegistry } from '@internal/framework-components/control';
-import type {
   ArgType,
   AttributeSpec,
   AttributeSpecContext,
@@ -18,14 +12,12 @@ import type {
   InferAttr,
   ModelAttributeCtx,
   ModelSymbol,
-  PslDiagnostic,
   ResolvedAttribute,
   SymbolTable,
   TypedFuncCall,
 } from '@internal/psl-parser';
 import {
   bool,
-  createBinder,
   diagnosticSource,
   entityRef,
   fieldAttribute,
@@ -94,7 +86,9 @@ function unloweredAttributeHint(attribute: ResolvedAttribute): string | undefine
   return UNLOWERED_FIELD_ATTRIBUTE_HINTS.get(attribute.name);
 }
 
-function describeUnsupportedMongoAttribute(sources: PslSources): DescribeUnsupportedAttribute {
+export function describeUnsupportedMongoAttribute(
+  sources: PslSources,
+): DescribeUnsupportedAttribute {
   return ({ attribute, level, owner, field }) => {
     if (level === 'model') {
       return {
@@ -112,30 +106,6 @@ function describeUnsupportedMongoAttribute(sources: PslSources): DescribeUnsuppo
       ...diagnosticSource(sources, field.node.syntax).at(attribute.span),
     };
   };
-}
-
-export function createMongoBinder(input: {
-  readonly symbolTable: SymbolTable;
-  readonly sources: PslSources;
-  readonly scalarTypeCodecIds: ReadonlyMap<string, string>;
-  readonly defaultFunctionRegistry: ControlMutationDefaultRegistry;
-  readonly dataTypes: DataTypeSupport;
-  readonly authoringContributions?: AuthoringContributions | undefined;
-}): { readonly binder: Binder; readonly diagnostics: readonly PslDiagnostic[] } {
-  const scalars: Record<string, AuthoringTypeConstructorDescriptor> = {};
-  for (const [name, codecId] of input.scalarTypeCodecIds) {
-    scalars[name] = { kind: 'typeConstructor', output: { codecId } };
-  }
-  return createBinder({
-    sources: input.sources,
-    symbolTable: input.symbolTable,
-    typeConstructors: { ...scalars, ...(input.authoringContributions?.type ?? {}) },
-    attributeSpecs: mongoAttributeSpecs,
-    defaultFunctionRegistry: input.defaultFunctionRegistry,
-    dataTypes: input.dataTypes,
-    pslBlockDescriptors: input.authoringContributions?.pslBlockDescriptors ?? {},
-    describeUnsupportedAttribute: describeUnsupportedMongoAttribute(input.sources),
-  });
 }
 
 // Interpret a model-level attribute node against its spec, draining any parse

@@ -2,7 +2,10 @@ import postgresAdapter from '@internal/adapter-postgres/control';
 import sqliteAdapter from '@internal/adapter-sqlite/control';
 import sql from '@internal/family-sql/control';
 import { dataTypeId } from '@internal/framework-components/codec';
-import { createControlStack } from '@internal/framework-components/control';
+import {
+  assembleAuthoringContributions,
+  createControlStack,
+} from '@internal/framework-components/control';
 import {
   buildSymbolTable,
   createBinder,
@@ -23,10 +26,11 @@ function parseArgument(source: string) {
   const binder = createBinder({
     sources,
     symbolTable,
-    typeConstructors: {},
-    attributeSpecs: { model: {}, field: {} },
-    defaultFunctionRegistry: new Map(),
-    dataTypes: EMPTY_DATA_TYPES,
+    context: {
+      authoringContributions: assembleAuthoringContributions([]),
+      controlMutationDefaults: { defaultFunctionRegistry: new Map() },
+      dataTypes: EMPTY_DATA_TYPES,
+    },
   }).binder;
   const attribute = [...document.syntax.descendants()]
     .map((element) => (element instanceof SyntaxNode ? FieldAttributeAst.cast(element) : undefined))

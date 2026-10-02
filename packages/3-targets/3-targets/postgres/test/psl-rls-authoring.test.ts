@@ -12,11 +12,20 @@
  */
 
 import type { Contract } from '@internal/contract/types';
+import type { AuthoringTypeConstructorDescriptor } from '@internal/framework-components/authoring';
+import { emptyCodecLookup } from '@internal/framework-components/codec';
 import { assembleAuthoringContributions } from '@internal/framework-components/control';
 import { buildSymbolTable, createBinder, interpretExtensionBlocks } from '@internal/psl-parser';
+import { withSeedDiagnostics } from '@internal/psl-parser/interpret';
 import { parse } from '@internal/psl-parser/syntax';
+import { type BoundPslSchema, bindPslSchema } from '@internal/psl-parser/test';
 import type { SqlStorage } from '@internal/sql-contract/types';
 import { interpretPslDocumentToSqlContract } from '@internal/sql-contract-psl';
+import {
+  describeUnsupportedSqlAttribute,
+  sqlAttributeSpecs,
+} from '@internal/sql-contract-psl/attribute-specs';
+import { sqlContextInput } from '@internal/sql-contract-psl/test';
 import { createSqlContract } from '@repo/test-utils';
 import { describe, expect, it } from 'vitest';
 import {
@@ -48,11 +57,14 @@ function blockResolutionBinder(
   return createBinder({
     sources,
     symbolTable,
-    typeConstructors: {},
-    attributeSpecs: { model: {}, field: {} },
-    defaultFunctionRegistry: new Map(),
-    dataTypes: postgresDataTypeSupport,
-    pslBlockDescriptors: assembled.pslBlockDescriptors,
+    context: {
+      authoringContributions: {
+        ...assembleAuthoringContributions([]),
+        pslBlockDescriptors: assembled.pslBlockDescriptors,
+      },
+      controlMutationDefaults: { defaultFunctionRegistry: new Map() },
+      dataTypes: postgresDataTypeSupport,
+    },
   }).binder;
 }
 
@@ -70,6 +82,32 @@ const scalarTypeDescriptors = new Map<string, { codecId: string; nativeType: str
   ['String', { codecId: 'pg/text@1', nativeType: 'text' }],
   ['Int', { codecId: 'pg/int4@1', nativeType: 'int4' }],
 ]);
+
+const scalarTypeConstructors: Record<string, AuthoringTypeConstructorDescriptor> =
+  Object.fromEntries(
+    [...scalarTypeDescriptors].map(([name, output]) => [
+      name,
+      { kind: 'typeConstructor' as const, output },
+    ]),
+  );
+
+function contextFor(authoringContributions: typeof assembled): BoundPslSchema['context'] {
+  return {
+    composedExtensions: [],
+    composedExtensionContracts: new Map(),
+    authoringContributions: {
+      ...authoringContributions,
+      type: { ...scalarTypeConstructors, ...authoringContributions.type },
+      attributeSpecs: sqlAttributeSpecs,
+    },
+    pslDiagnostics: { describeUnsupportedAttribute: describeUnsupportedSqlAttribute },
+    codecLookup: { ...emptyCodecLookup, descriptorFor: () => undefined },
+    controlMutationDefaults: { defaultFunctionRegistry: new Map(), generatorDescriptors: [] },
+    dataTypes: postgresDataTypeSupport,
+    resolvedInputs: [],
+    capabilities: { sql: { scalarList: true } },
+  };
+}
 
 function interpretWithSymbolDiagnostics(
   source: string,
@@ -91,20 +129,25 @@ function interpretWithSymbolDiagnostics(
     }).diagnostics,
   ];
 
-  const result = interpretPslDocumentToSqlContract({
-    documents: [document],
-    dataTypes: postgresDataTypeSupport,
-    symbolTable,
-    sources,
-    target: postgresTarget,
-    scalarColumnDescriptors: scalarTypeDescriptors,
-    authoringContributions: options?.withoutModelAttributes
-      ? { ...assembled, modelAttributes: {} }
-      : assembled,
-    composedExtensionContracts: new Map(),
-    createNamespace: postgresCreateNamespace,
-    capabilities: { sql: { scalarList: true } },
+  const authoringContributions = options?.withoutModelAttributes
+    ? { ...assembled, modelAttributes: {} }
+    : assembled;
+  const bound = bindPslSchema(source, {
+    sourceId: 'psl-rls-authoring.test.psl',
+    context: contextFor(authoringContributions),
   });
+  const result = withSeedDiagnostics(
+    interpretPslDocumentToSqlContract({
+      documents: bound.documents,
+      sources: bound.sources,
+      symbolTable: bound.symbolTable,
+      binder: bound.binder,
+      ...sqlContextInput(bound.context),
+      target: postgresTarget,
+      createNamespace: postgresCreateNamespace,
+    }),
+    bound.seedDiagnostics,
+  );
   return { result, symbolTableDiagnostics: diagnostics };
 }
 

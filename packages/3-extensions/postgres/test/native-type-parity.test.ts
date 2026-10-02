@@ -1,11 +1,11 @@
 import postgresAdapter from '@internal/adapter-postgres/control';
 import postgresDriver from '@internal/driver-postgres/control';
 import sql from '@internal/family-sql/control';
-import { collectScalarTypeConstructors } from '@internal/framework-components/authoring';
 import { createControlStack } from '@internal/framework-components/control';
-import { buildSymbolTable } from '@internal/psl-parser';
-import { parse } from '@internal/psl-parser/syntax';
+import { withSeedDiagnostics } from '@internal/psl-parser/interpret';
+import { bindPslSchema, contractSourceContextFromControlStack } from '@internal/psl-parser/test';
 import { interpretPslDocumentToSqlContract } from '@internal/sql-contract-psl';
+import { sqlContextInput } from '@internal/sql-contract-psl/test';
 import postgres from '@internal/target-postgres/control';
 import postgresPackRef from '@internal/target-postgres/pack';
 import { postgresCreateNamespace } from '@internal/target-postgres/types';
@@ -19,25 +19,22 @@ const stack = createControlStack({
 });
 
 function emit(schema: string) {
-  const { document, sources } = parse(schema, 'native-type-parity.test.psl');
-  const { symbolTable } = buildSymbolTable({
-    documents: [document],
-    sources,
+  const bound = bindPslSchema(schema, {
+    sourceId: 'native-type-parity.test.psl',
+    context: contractSourceContextFromControlStack(stack),
   });
-  return interpretPslDocumentToSqlContract({
-    documents: [document],
-    dataTypes: stack.dataTypes,
-    symbolTable,
-    sources,
-    target: postgresPackRef,
-    scalarColumnDescriptors: collectScalarTypeConstructors(stack.authoringContributions.type),
-    authoringContributions: stack.authoringContributions,
-    controlMutationDefaults: stack.controlMutationDefaults,
-    composedExtensionContracts: new Map(),
-    createNamespace: postgresCreateNamespace,
-    codecLookup: stack.codecLookup,
-    capabilities: stack.capabilities,
-  });
+  return withSeedDiagnostics(
+    interpretPslDocumentToSqlContract({
+      documents: bound.documents,
+      sources: bound.sources,
+      symbolTable: bound.symbolTable,
+      binder: bound.binder,
+      ...sqlContextInput(bound.context),
+      target: postgresPackRef,
+      createNamespace: postgresCreateNamespace,
+    }),
+    bound.seedDiagnostics,
+  );
 }
 
 interface StorageTypeShape {

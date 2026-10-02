@@ -1,9 +1,9 @@
 import type { ContractSourceContext } from '@internal/config/config-types';
 import { createDataTypeLookup, emptyCodecLookup } from '@internal/framework-components/codec';
 import type { BlockSpecContext, PslBlockSpecDescriptor } from '@internal/psl-parser';
-import { blockAttribute, buildSymbolTable, optional, str, structBlock } from '@internal/psl-parser';
+import { blockAttribute, optional, str, structBlock } from '@internal/psl-parser';
 import { hasPslInterpreter } from '@internal/psl-parser/interpret';
-import { parse } from '@internal/psl-parser/syntax';
+import { bindPslSchema } from '@internal/psl-parser/test';
 import { describe, expect, it } from 'vitest';
 import { mongoContract } from '../src/exports/provider';
 
@@ -71,10 +71,7 @@ describe('block spec context', () => {
     const context = mongoContext(seen);
     const source = mongoContract('./schema.prisma').source;
     if (!hasPslInterpreter(source)) throw new Error('expected an interpret-capable source');
-    const { document, sources } = parse(SCHEMA, './schema.prisma');
-    const { symbolTable } = buildSymbolTable({ documents: [document], sources });
-
-    source.interpret({ documents: [document], sources, symbolTable }, context);
+    source.interpret(bindPslSchema(SCHEMA, { sourceId: './schema.prisma', context }), context);
 
     expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen.filter((ctx) => ctx.dataTypes !== context.dataTypes)).toEqual([]);

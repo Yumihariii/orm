@@ -1535,6 +1535,34 @@ namespace app {
     expect(completionItemByLabel(items, 'Int').detail).toBe('Configured scalar type');
   });
 
+  it('completes a field preset as a call', () => {
+    const { items } = completeWithSource({
+      markedSource: 'model Post { value | }',
+      pslBlockDescriptors: {},
+      clientSupportsSnippets: false,
+      authoringContributions: assembleAuthoringContributions([
+        {
+          id: 'presets',
+          authoring: {
+            field: {
+              stamp: {
+                kind: 'fieldPreset',
+                output: { codecId: 'fixture/timestamp@1', nativeType: 'timestamp' },
+              },
+            },
+          },
+        },
+      ]),
+      controlMutationDefaults,
+    });
+    const item = completionItemByLabel(items, 'stamp');
+    expect({
+      kind: item.kind,
+      detail: item.detail,
+      newText: item.textEdit === undefined ? undefined : item.textEdit.newText,
+    }).toEqual({ kind: CompletionItemKind.Function, detail: 'Field preset', newText: 'stamp()' });
+  });
+
   it(
     'lists deprecated Mongo scalar names tagged deprecated, naming the replacement',
     async () => {

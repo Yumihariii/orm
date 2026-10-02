@@ -1,13 +1,7 @@
 import type {
-  AuthoringContributions,
-  AuthoringFieldNamespace,
   AuthoringModelAttributeDescriptor,
-  AuthoringPslBlockDescriptorNamespace,
-  AuthoringTypeConstructorDescriptor,
-  AuthoringTypeNamespace,
   DataTypeSupport,
 } from '@internal/framework-components/authoring';
-import { isAuthoringFieldPresetDescriptor } from '@internal/framework-components/authoring';
 import type { ControlMutationDefaultRegistry } from '@internal/framework-components/control';
 import type { ContributedPslDiagnosticCode } from '@internal/framework-components/psl-ast';
 import type {
@@ -17,7 +11,6 @@ import type {
   AttributeSpecContext,
   AttributeSpecNamespace,
   Binder,
-  DescribeUnsupportedAttribute,
   FieldAttributeCtx,
   FieldAttributeSpecContext,
   FieldSymbol,
@@ -36,7 +29,6 @@ import type {
 } from '@internal/psl-parser';
 import {
   bool,
-  createBinder,
   dataTypeValue,
   diagnosticSource,
   entityRef,
@@ -58,6 +50,7 @@ import {
   referencedFieldRef,
   str,
   taggedLiteral,
+  typeReferenceNode,
   writtenList,
   writtenScalar,
 } from '@internal/psl-parser';
@@ -107,19 +100,6 @@ function buildFieldAttributeCtx(input: {
   };
 }
 
-function fieldPresetsAsTypeNames(
-  namespace: AuthoringFieldNamespace | undefined,
-): AuthoringTypeNamespace {
-  if (namespace === undefined) return {};
-  const result: Record<string, AuthoringTypeConstructorDescriptor | AuthoringTypeNamespace> = {};
-  for (const [name, value] of Object.entries(namespace)) {
-    result[name] = isAuthoringFieldPresetDescriptor(value)
-      ? { kind: 'typeConstructor', output: { codecId: value.output.codecId } }
-      : fieldPresetsAsTypeNames(value);
-  }
-  return result;
-}
-
 export function modelAttributeSpecsFrom(
   modelAttributesByName: ReadonlyMap<string, AuthoringModelAttributeDescriptor>,
 ): Readonly<Record<string, ModelAttributeSpecFactory>> {
@@ -131,48 +111,6 @@ export function modelAttributeSpecsFrom(
     >(descriptor.spec);
   }
   return result;
-}
-
-export function createSqlBinder(input: {
-  readonly symbolTable: SymbolTable;
-  readonly sources: PslSources;
-  readonly authoringContributions?: AuthoringContributions | undefined;
-  readonly defaultFunctionRegistry: ControlMutationDefaultRegistry;
-  readonly dataTypes: DataTypeSupport;
-  readonly scalarColumnDescriptors?: ReadonlyMap<string, { readonly codecId: string }> | undefined;
-  readonly pslBlockDescriptors?: AuthoringPslBlockDescriptorNamespace | undefined;
-  readonly describeUnsupportedAttribute?: DescribeUnsupportedAttribute | undefined;
-  readonly contributedModelAttributeSpecs?:
-    | Readonly<Record<string, ModelAttributeSpecFactory>>
-    | undefined;
-}): { readonly binder: Binder; readonly diagnostics: readonly PslDiagnostic[] } {
-  const scalars: Record<string, AuthoringTypeConstructorDescriptor> = {};
-  for (const [name, descriptor] of input.scalarColumnDescriptors ?? []) {
-    scalars[name] = { kind: 'typeConstructor', output: { codecId: descriptor.codecId } };
-  }
-  return createBinder({
-    sources: input.sources,
-    symbolTable: input.symbolTable,
-    ...(input.pslBlockDescriptors === undefined
-      ? {}
-      : { pslBlockDescriptors: input.pslBlockDescriptors }),
-    typeConstructors: {
-      ...scalars,
-      ...fieldPresetsAsTypeNames(input.authoringContributions?.field),
-      ...(input.authoringContributions?.type ?? {}),
-    },
-    attributeSpecs: {
-      model: Object.assign(
-        Object.create(null),
-        sqlAttributeSpecs.model,
-        input.contributedModelAttributeSpecs,
-      ),
-      field: sqlAttributeSpecs.field,
-    },
-    defaultFunctionRegistry: input.defaultFunctionRegistry,
-    dataTypes: input.dataTypes,
-    describeUnsupportedAttribute: input.describeUnsupportedAttribute,
-  });
 }
 
 // Interpret a model-level attribute node against its spec, draining any parse
@@ -403,12 +341,9 @@ function noEnumMember(): RejectingArgType<never, AttributeCtx> {
 }
 
 function enumMemberNames(ctx: FieldAttributeSpecContext): readonly string[] | undefined {
-  const scope =
-    ctx.field.typeNamespaceId === undefined
-      ? ctx.symbols.topLevel
-      : ctx.symbols.topLevel.namespaces[ctx.field.typeNamespaceId];
-  const block = scope?.blocks[ctx.field.typeName];
-  if (block === undefined || block.keyword !== 'enum') return undefined;
+  const resolution = ctx.typeResolution;
+  if (resolution?.kind !== 'block' || resolution.symbol.keyword !== 'enum') return undefined;
+  const block = resolution.symbol;
   const names: string[] = [];
   const seen = new Set<string>();
   for (const entry of block.node.entries()) {
@@ -861,13 +796,16 @@ export function fieldSpecContext(input: {
   readonly symbols: SymbolTable;
   readonly model: ModelSymbol;
   readonly field: FieldSymbol;
+  readonly binder: Binder;
   readonly defaultFunctionRegistry: ControlMutationDefaultRegistry;
   readonly dataTypes: DataTypeSupport;
 }): FieldAttributeSpecContext {
+  const node = typeReferenceNode(input.field);
   return {
     symbols: input.symbols,
     model: input.model,
     field: input.field,
+    typeResolution: node === undefined ? undefined : input.binder.symbolForNode(node),
     defaultFunctionRegistry: input.defaultFunctionRegistry,
     dataTypes: input.dataTypes,
   };
