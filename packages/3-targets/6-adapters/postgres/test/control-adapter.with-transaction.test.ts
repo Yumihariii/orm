@@ -1,7 +1,5 @@
 import { createPostgresBuiltinCodecLookup } from '@internal/target-postgres/codecs';
 import { createPostgresBuiltinDataTypeLookup } from '@internal/target-postgres/data-types';
-import { markerLockKey } from '@internal/target-postgres/marker-lock';
-import { createContract } from '@repo/test-utils';
 import { describe, expect, it } from 'vitest';
 import { PostgresControlAdapter } from '../src/core/control-adapter';
 
@@ -97,16 +95,15 @@ describe('PostgresControlAdapter.lockMarker', () => {
     createPostgresBuiltinDataTypeLookup(),
   );
 
-  it('takes the advisory lock the migration runner takes for the space', async () => {
+  it('takes the one advisory lock of the marker table, whatever the space or contract', async () => {
     const driver = createCapturingDriver();
-    const contract = createContract();
 
-    await adapter.lockMarker(driver, 'app', contract);
+    await adapter.lockMarker(driver);
 
     expect(driver.calls).toEqual([
       {
         sql: 'select pg_advisory_xact_lock(hashtext($1))',
-        params: [markerLockKey(contract, 'app')],
+        params: ['prisma_8.contract.marker'],
       },
     ]);
   });

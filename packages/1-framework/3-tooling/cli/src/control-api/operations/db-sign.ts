@@ -14,6 +14,7 @@ import {
   type AggregateContractSpace,
   type ContractSpaceAggregate,
   collectAggregateNamespaces,
+  spacesInApplyOrder,
   verifyMigration,
 } from '@internal/migration-tools/aggregate';
 import type { SnapshotContentVerifier } from '@internal/migration-tools/contract-snapshot-store';
@@ -98,7 +99,7 @@ function markerHashes(marker: ContractMarkerRecord | undefined): MarkerHashes | 
 }
 
 /**
- * Reads every space's marker, verifies every contract space of the aggregate against the live schema without strict mode, then writes the marker of every space that verified in one call to the family, each only while it still holds the hashes read here. A space that fails verification is reported with its schema result and keeps its marker; a space whose marker another process wrote in the meantime is reported as a conflict and keeps that marker. The family gets the spaces in the order `migrate` applies them, extension spaces first, so the two take their locks in the same order.
+ * Reads every space's marker, verifies every contract space of the aggregate against the live schema without strict mode, then writes the marker of every space that verified in one call to the family, each only while it still holds the hashes read here. A space that fails verification is reported with its schema result and keeps its marker; a space whose marker another process wrote in the meantime is reported as a conflict and keeps that marker. The family gets the spaces in the order `migrate` applies them ({@link spacesInApplyOrder}).
  */
 export async function signContractSpaces<TFamilyId extends string, TTargetId extends string>(
   options: SignContractSpacesOptions<TFamilyId, TTargetId>,
@@ -145,7 +146,7 @@ export async function signContractSpaces<TFamilyId extends string, TTargetId ext
     }
     return schema;
   };
-  const toSign: readonly SpaceToSign[] = [...aggregate.extensions, aggregate.app]
+  const toSign: readonly SpaceToSign[] = spacesInApplyOrder(aggregate)
     .filter((space) => schemaOf(space).ok)
     .map((space) => ({
       space: space.spaceId,

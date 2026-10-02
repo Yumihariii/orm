@@ -23,7 +23,7 @@ import { InternalError } from '@internal/utils/internal-error';
 import type { Result } from '@internal/utils/result';
 import { notOk, ok, okVoid } from '@internal/utils/result';
 import { postgresError } from '../errors';
-import { MARKER_LOCK_SQL, markerLockKey } from './marker-lock';
+import { MARKER_LOCK_KEY, MARKER_LOCK_SQL } from './marker-lock';
 import type { PostgresPlanTargetDetails } from './planner-target-details';
 
 interface ApplyPlanSuccessValue {
@@ -84,7 +84,6 @@ class PostgresMigrationRunner implements SqlMigrationRunner<PostgresPlanTargetDe
       );
     }
     const space = options.plan.spaceId;
-    const lockKey = markerLockKey(options.destinationContract, space, options.schemaName);
 
     // Materialize any async ops before running checks or executing.
     const planOps = blindCast<
@@ -103,7 +102,7 @@ class PostgresMigrationRunner implements SqlMigrationRunner<PostgresPlanTargetDe
     const policyCheck = this.enforcePolicyCompatibility(options.policy, planOps);
     if (!policyCheck.ok) return policyCheck;
 
-    await this.acquireLock(driver, lockKey);
+    await this.acquireLock(driver, MARKER_LOCK_KEY);
     const ensureResult = await this.ensureControlTables(driver, options.destinationContract);
     if (!ensureResult.ok) return ensureResult;
     const existingMarker = await this.family.readMarker({ driver, space });

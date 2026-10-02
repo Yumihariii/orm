@@ -5,6 +5,7 @@ import type {
   ControlFamilyInstance,
   ControlStack,
   CoreSchemaView,
+  MarkerHashes,
   MigrationPlanOperation,
   OperationPreview,
   OperationPreviewCapable,
@@ -217,13 +218,15 @@ export function createMongoFamilyInstance(controlStack: ControlStack): MongoCont
     const signed = { space, contract: { storageHash, profileHash } };
     const controlAdapter = getControlAdapter();
 
-    const existing = await controlAdapter.readMarker(driver, space);
-    const found =
-      existing === null
+    const readHashes = async (): Promise<MarkerHashes | null> => {
+      const marker = await controlAdapter.readMarker(driver, space);
+      return marker === null
         ? null
-        : { storageHash: existing.storageHash, profileHash: existing.profileHash };
-    if (!sameMarkerHashes(found, verifiedMarker)) {
-      return { ...signed, markerChanged: { verified: verifiedMarker, found } };
+        : { storageHash: marker.storageHash, profileHash: marker.profileHash };
+    };
+    const existing = await readHashes();
+    if (!sameMarkerHashes(existing, verifiedMarker)) {
+      return { ...signed, markerChanged: { verified: verifiedMarker, found: existing } };
     }
     if (existing === null) {
       await controlAdapter.initMarker(driver, space, { storageHash, profileHash });
@@ -237,19 +240,9 @@ export function createMongoFamilyInstance(controlStack: ControlStack): MongoCont
       profileHash,
     });
     if (!updated) {
-      throw structuredError(
-        'MIGRATION.MARKER_CAS_FAILURE',
-        'CAS conflict: marker was modified by another process during sign',
-      );
+      return { ...signed, markerChanged: { verified: verifiedMarker, found: await readHashes() } };
     }
-    return {
-      ...signed,
-      marker: {
-        created: false,
-        updated: true,
-        previous: { storageHash: existing.storageHash, profileHash: existing.profileHash },
-      },
-    };
+    return { ...signed, marker: { created: false, updated: true, previous: existing } };
   }
 
   return {

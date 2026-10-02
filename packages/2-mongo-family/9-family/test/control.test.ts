@@ -136,9 +136,13 @@ describe('createMongoFamilyInstance', () => {
     }
   });
 
-  it('signSpaces() raises MIGRATION.MARKER_CAS_FAILURE when the marker CAS update fails', async () => {
+  it('signSpaces() reports a space whose compare-and-swap update fails as changed', async () => {
+    const reads = [
+      { storageHash: 'stale', profileHash: 'stale' },
+      { storageHash: 'moved', profileHash: 'moved-profile' },
+    ];
     const adapter = {
-      readMarker: async () => ({ storageHash: 'stale', profileHash: 'stale' }),
+      readMarker: async () => reads.shift() ?? null,
       updateMarker: async () => false,
     } as unknown as MongoControlAdapter<'mongo'>;
     const stack = createControlStack({
@@ -148,24 +152,32 @@ describe('createMongoFamilyInstance', () => {
     });
     const instance = createMongoFamilyInstance(stack);
     const driver = { targetId: 'mongo' } as Parameters<typeof instance.signSpaces>[0]['driver'];
-    try {
-      await instance.signSpaces({
-        driver,
-        spaces: [
-          {
-            space: 'app',
-            contract: instance.deserializeContract(mongoContractJson({})),
-            verifiedMarker: { storageHash: 'stale', profileHash: 'stale' },
-          },
-        ],
-      });
-      expect.fail('expected throw');
-    } catch (e) {
-      expect(isStructuredError(e)).toBe(true);
-      if (!isStructuredError(e)) return;
-      expect(e.code).toBe('MIGRATION.MARKER_CAS_FAILURE');
-      expect(e.message).toBe('CAS conflict: marker was modified by another process during sign');
-    }
+    const contract = instance.deserializeContract(mongoContractJson({}));
+
+    const signatures = await instance.signSpaces({
+      driver,
+      spaces: [
+        {
+          space: 'app',
+          contract,
+          verifiedMarker: { storageHash: 'stale', profileHash: 'stale' },
+        },
+      ],
+    });
+
+    expect(signatures).toEqual([
+      {
+        space: 'app',
+        contract: {
+          storageHash: contract.storage.storageHash,
+          profileHash: contract.profileHash,
+        },
+        markerChanged: {
+          verified: { storageHash: 'stale', profileHash: 'stale' },
+          found: { storageHash: 'moved', profileHash: 'moved-profile' },
+        },
+      },
+    ]);
   });
 
   it('signSpaces() writes the marker of each space it is given', async () => {

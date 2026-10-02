@@ -777,7 +777,7 @@ interface ControlFamilyInstance {
 }
 ```
 
-`signSpaces` writes the marker of each space it is given with its contract's hashes, if the marker still holds `verifiedMarker`, and returns one `{ space, contract, marker }` per space, or `{ space, contract, markerChanged }` for a space whose marker no longer holds it. It does not verify; the command verifies every space first. The SQL family implements it through `SqlControlAdapter.withTransaction` and `SqlControlAdapter.lockMarker`, taking the locks in the order it is given the spaces; `db sign` gives them in the order `migrate` applies them, extension spaces first, so the two cannot deadlock. The Mongo family writes each marker on its own.
+`signSpaces` writes the marker of each space it is given with its contract's hashes, if the marker still holds `verifiedMarker`, and returns one `{ space, contract, marker }` per space, or `{ space, contract, markerChanged }` for a space whose marker no longer holds it when it is read or when it is written. It does not verify; the command verifies every space first, and gives the spaces in the order `migrate` applies them, extension spaces first. The SQL family implements it through `SqlControlAdapter.withTransaction` and `SqlControlAdapter.lockMarker`, which takes the one lock the migration runner holds while it reads and writes markers, whatever the space. The Mongo family writes each marker on its own.
 
 ### `prisma db init`
 

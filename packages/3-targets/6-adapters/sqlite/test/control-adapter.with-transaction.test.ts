@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { createSqliteBuiltinCodecLookup } from '@internal/target-sqlite/codecs';
-import { createContract } from '@repo/test-utils';
 import { join } from 'pathe';
 import { describe, expect, it } from 'vitest';
 import { SqliteControlAdapter } from '../src/core/control-adapter';
@@ -124,7 +123,7 @@ describe('SqliteControlAdapter marker lock', () => {
       await signer.query('CREATE TABLE t (x integer)');
 
       await adapter.withTransaction(signer, async () => {
-        await adapter.lockMarker(signer, 'app', createContract());
+        await adapter.lockMarker(signer);
         expect(() => runner.exec('BEGIN EXCLUSIVE')).toThrow(/database is locked/);
       });
     } finally {
@@ -137,7 +136,7 @@ describe('SqliteControlAdapter marker lock', () => {
   it('issues no statement of its own, because the transaction already holds the lock', async () => {
     const driver = createMemoryDriver();
 
-    await adapter.lockMarker(driver, 'app', createContract());
+    await adapter.lockMarker(driver);
 
     expect(driver.statements).toEqual([]);
   });

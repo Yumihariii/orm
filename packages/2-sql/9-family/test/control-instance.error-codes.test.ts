@@ -1,10 +1,8 @@
-import { APP_SPACE_ID, type SchemaDiffIssue } from '@internal/framework-components/control';
-import type { SqlControlDriverInstance } from '@internal/sql-contract/types';
+import type { SchemaDiffIssue } from '@internal/framework-components/control';
 import { isStructuredError } from '@internal/utils/structured-error';
 import { describe, expect, it } from 'vitest';
-import type { SqlControlAdapter } from '../src/core/control-adapter';
 import { createSqlFamilyInstance } from '../src/core/control-instance';
-import { buildContract, makeStack } from './control-instance-stack.helpers';
+import { makeStack } from './control-instance-stack.helpers';
 
 function captureError(fn: () => void): unknown {
   try {
@@ -33,48 +31,6 @@ describe('sql family instance structured error codes', () => {
     expect(error).toMatchObject({
       code: 'CONTRACT.PACK_CONTRIBUTION_INVALID',
       meta: { targetId: 'postgres', operation: 'classifySubjectGranularity' },
-    });
-  });
-
-  it('raises MIGRATION.MARKER_CAS_FAILURE when the marker CAS update loses the race during signSpaces', async () => {
-    const adapterStub = {
-      familyId: 'sql',
-      targetId: 'postgres',
-      bootstrapSignMarkerQueries: () => [],
-      withTransaction: (_driver: unknown, fn: () => Promise<unknown>) => fn(),
-      lockMarker: async () => {},
-      readMarker: async () => ({
-        storageHash: 'stale-hash',
-        profileHash: 'stale-profile',
-        contractJson: null,
-        updatedAt: new Date(),
-        invariants: [],
-      }),
-      updateMarker: async () => false,
-    } as unknown as SqlControlAdapter<string>;
-    const instance = createSqlFamilyInstance(makeStack({ createAdapter: () => adapterStub }));
-
-    const driver = {} as SqlControlDriverInstance<string>;
-    const error = await instance
-      .signSpaces({
-        driver,
-        spaces: [
-          {
-            space: APP_SPACE_ID,
-            contract: buildContract(),
-            verifiedMarker: { storageHash: 'stale-hash', profileHash: 'stale-profile' },
-          },
-        ],
-      })
-      .then(() => {
-        throw new Error('expected signSpaces() to reject');
-      })
-      .catch((err: unknown) => err);
-
-    expect(isStructuredError(error)).toBe(true);
-    expect(error).toMatchObject({
-      code: 'MIGRATION.MARKER_CAS_FAILURE',
-      message: 'CAS conflict: marker was modified by another process during sign',
     });
   });
 });

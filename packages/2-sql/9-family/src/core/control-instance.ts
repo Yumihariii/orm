@@ -8,6 +8,7 @@ import type {
   ControlStack,
   CoreSchemaView,
   DiffSubjectGranularity,
+  MarkerHashes,
   MigrationPlanOperation,
   OperationPreview,
   OperationPreviewCapable,
@@ -597,13 +598,15 @@ export function createSqlFamilyInstance<TTargetId extends string>(
         : storageHash;
     const signed = { space, contract: { storageHash, profileHash } };
 
-    const existing = await controlAdapter.readMarker(driver, space);
-    const found =
-      existing === null
+    const readHashes = async (): Promise<MarkerHashes | null> => {
+      const marker = await controlAdapter.readMarker(driver, space);
+      return marker === null
         ? null
-        : { storageHash: existing.storageHash, profileHash: existing.profileHash };
-    if (!sameMarkerHashes(found, verifiedMarker)) {
-      return { ...signed, markerChanged: { verified: verifiedMarker, found } };
+        : { storageHash: marker.storageHash, profileHash: marker.profileHash };
+    };
+    const existing = await readHashes();
+    if (!sameMarkerHashes(existing, verifiedMarker)) {
+      return { ...signed, markerChanged: { verified: verifiedMarker, found: existing } };
     }
     if (existing === null) {
       await controlAdapter.insertMarker(driver, space, { storageHash, profileHash });
@@ -617,22 +620,14 @@ export function createSqlFamilyInstance<TTargetId extends string>(
       profileHash,
     });
     if (!updated) {
-      throw sqlFamilyError(
-        'MIGRATION.MARKER_CAS_FAILURE',
-        'CAS conflict: marker was modified by another process during sign',
-        {
-          why: 'Another process updated the contract marker between the read and the compare-and-swap write.',
-          fix: 'Re-run the sign command; if it keeps failing, make sure only one migration process runs at a time.',
-          meta: { space },
-        },
-      );
+      return { ...signed, markerChanged: { verified: verifiedMarker, found: await readHashes() } };
     }
     return {
       ...signed,
       marker: {
         created: false,
         updated: true,
-        previous: { storageHash: existing.storageHash, profileHash: existing.profileHash },
+        previous: existing,
       },
     };
   };
@@ -647,9 +642,7 @@ export function createSqlFamilyInstance<TTargetId extends string>(
     }
     const controlAdapter = getControlAdapter();
     return controlAdapter.withTransaction(driver, async () => {
-      for (const { space, contract } of spaces) {
-        await controlAdapter.lockMarker(driver, space, contract);
-      }
+      await controlAdapter.lockMarker(driver);
       for (const query of controlAdapter.bootstrapSignMarkerQueries()) {
         const lowered = await controlAdapter.lowerToExecuteRequest(query, {
           contract: first.contract,

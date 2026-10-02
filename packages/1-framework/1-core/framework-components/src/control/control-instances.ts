@@ -53,7 +53,7 @@ export interface ControlFamilyInstance<TFamilyId extends string, TSchemaIR>
   }): VerifyDatabaseSchemaResult;
 
   /**
-   * Writes the marker of every space in `spaces` with its contract's hashes. Does not check the schema: callers verify each space first. A space whose marker no longer holds `verifiedMarker` is reported as changed and its marker is left as it was. The SQL family takes the migration runner's lock for each space, in the order given, and writes every marker in one transaction, so a failed write leaves every marker as it was; callers pass the spaces in the order `migrate` applies them, so the two cannot deadlock. The Mongo family writes the markers one by one, so a failed write can leave earlier markers written; running the command again finishes the job.
+   * Writes the marker of every space in `spaces` with its contract's hashes. Does not check the schema: callers verify each space first. A space whose marker no longer holds `verifiedMarker`, when it is read or when it is written, is reported as changed and its marker is left as it was. The SQL family takes the migration runner's marker lock, one lock for the whole marker table, and writes every marker in one transaction, so a failed write leaves every marker as it was. The Mongo family writes the markers one by one, so a failed write can leave earlier markers written; running the command again finishes the job.
    */
   signSpaces(options: {
     readonly driver: ControlDriverInstance<TFamilyId, string>;
