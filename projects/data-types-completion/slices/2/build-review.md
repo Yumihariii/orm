@@ -24,6 +24,7 @@ Reviewer-maintained. Contract: `projects/data-types-completion/design.md` sectio
 | e | 3 (`40bde80ebb`, `5ffb0d42f6`) | SATISFIED: S2-e-R1-1 closed, no new finding |
 | f | 1 (`8819d89a73`, `b237abc245`, `a8cbeacfb9`, `a1438656e8`, `625fa4411a`, `16f4682c19`) | ANOTHER ROUND NEEDED: 4 must-fix, 1 should-fix, 1 low |
 | f | 2 (`0e325b563a`, `a359d8c43e`, `71a218f46e`, `a68d3a22fa`, `dc4e090968`, `cb85a39d8c`) | SATISFIED: S2-f-R1-1 to S2-f-R1-5 closed; S2-f-R1-6 waits for the base merge; no new finding |
+| review fixes 2 | 1 (`c408e56420..ffb85f8f86`) | ANOTHER ROUND NEEDED: 1 must-fix, 2 low; the 16 items and the five manual QA defects closed; S2-f-R1-6 closed |
 
 ## Findings log
 
@@ -170,7 +171,47 @@ Reviewer-maintained. Contract: `projects/data-types-completion/design.md` sectio
 - S2-f-R1-5: closed (`dc4e090968`, `cb85a39d8c`). The three tests use the new shapes and pass (35 and 4); the plan allows the `migration.ts` comment class.
 - S2-f-R1-6: open until the base merge; `check:upgrade-coverage --mode pr --prev 1e9cc29f05` passes.
 
+### S2-rf2-R1-1 (must-fix): an enum member written as a number is refused under `pg/json@1` and `pg/jsonb@1`, which `main` accepts
+
+- Where: `packages/1-framework/1-core/framework-components/src/shared/enum-block-members.ts:32-49`, which sends every number member to `readWrittenNumber` (`readWrittenNumberForCodec` in `packages/2-sql/2-authoring/contract-psl/src/data-type-default.ts`).
+- What is wrong: the ruling says no form `main` accepted is refused. I loaded one enum per codec and member form on `main` (`9a726c6a6a`) and on this tip: 34 Postgres and 13 SQLite codec ids, each with `1`, `-1`, `0`, `1.5`, `9007199254740993`, `"1"`, `"low"`, `true`, `false` and `null` (probe and results in `wip/review-logs/r2-probes/`). On `main`, `enum P { @@type("pg/jsonb@1") Low = 1 }` loads and stores `1`, because the JSON codecs' `decodeJson` takes any value. On this tip it is refused with `enum "P" member "Low": pg/jsonb has no cast from pg/int2; it casts from pg/json`. The same holds for every number form under `pg/json@1` and `pg/jsonb@1` (10 cases). No other Postgres form that `main` accepted is refused. Booleans and `null` take the same path as on `main`; under `pg/bool@1` and the JSON codecs they throw `enumType("P"): CHECK constraint members must encode to strings or finite numbers` on both, which is the deferred item. Large numbers keep every digit under `pg/int8@1`, `pg/numeric@1`, `pg/unboundedint@1` and `sqlite/bigint@1`, which `main` refused as numbers.
+- Change: when `readWrittenNumber` refuses a number member, read it with the codec's `decodeJson`, as `main` does, and report the written-value reason only when `decodeJson` refuses it too. That keeps the three rows of `domain-types-match-their-columns` true, because `pg/text@1` and the `int4` codecs refuse those numbers in `decodeJson` as well. Add tests for `Low = 1` and `Low = 1.5` under `pg/json@1` and `pg/jsonb@1`, storing what `main` stores.
+
+### S2-rf2-R1-2 (low): a `sqlite/json@1` enum written for `main` no longer loads, and neither the text nor the script says so
+
+- Where: `packages/3-targets/3-targets/sqlite/src/core/codecs.ts` (`sqlite/json@1` `decodeJson`); `upgrade-instructions/pending/data-type-in-contract/app/instructions.md`; the script's enum value rewrite (`data-type-in-contract.ts`, integer enums only).
+- What is wrong: on `main`, every member form under `@@type("sqlite/json@1")` loads (`"low"`, `1`, `true`, `null`), because its `decodeJson` took any value. On this tip each is refused: strings, booleans and `null` because the codec now reads JSON text (dispatch b, design 9.3), numbers because no cast leads to `sqlite/text`. Only JSON text loads, such as `A = "1"`. The script rewrites the stored values of integer enums but not of JSON enums, so an upgraded contract keeps `["low"]` while a re-emit needs `"\"low\""`. S2-rf2-R1-1's fix does not cover this, because `decodeJson` refuses these forms too. Such enums are rare.
+- Change: say in the app text that a `sqlite/json@1` enum member is written as the JSON text of its document, with an example, and let the script rewrite these enums' stored values to that text, as it does for integer enums. Or record the gap in `deferred.md`.
+
+### S2-rf2-R1-3 (low): the script says a project is in the new format when it found no contract
+
+- Where: `upgrade-instructions/pending/data-type-in-contract/{app,extension}/scripts/data-type-in-contract.ts`, `summary`.
+- What is wrong: run on an empty folder, or from the wrong directory, it prints `The project is already in the new format; nothing changed.` and exits 0. The user is told the upgrade is done when nothing was looked at.
+- Change: when the root holds no SQL contract, print that no contract was found under the root, with a test.
+
+### Review fixes 2 round 1 status of S2-f-R1-6
+
+- S2-f-R1-6: closed. `check:upgrade-coverage --mode pr --prev bot/data-types-completion` exits 0 on this tip.
+
 ## Round notes
+
+### Review fixes 2, round 1
+
+Commits `c408e56420..ffb85f8f86` (20 commits, one a merge of the manual QA record). Every brief item is built, each in its own commit or a shared docs commit, and nothing outside the items changed. No committed `contract.json`, `contract.d.ts`, snapshot, migration or planner golden changed; the only new contracts are the script's `json-default-document` fixtures. No `any`, bare `as` or new comment in production code; no test name uses "should".
+
+1. Enum members (CR2-F14): parsed blocks keep each number literal's source text (`numberTexts`), and a number member is read from it, so `A = 9007199254740993` under `pg/int8@1` stores `"9007199254740993"` and `B = 9007199254740992` is not a duplicate; `-9223372036854775808` and a 31-digit numeric keep every digit. A string member goes to `decodeJson`, so every string form `main` took under `pg/int8`, `pg/numeric`, `pg/json`, `pg/jsonb`, `sqlite/bigint` and `sqlite/bigintnumber` loads again. Number members under the JSON codecs are S2-rf2-R1-1; `sqlite/json@1` is S2-rf2-R1-2. The three edited rows of `domain-types-match-their-columns` now quote what this tip prints (checked by loading each schema); `main` prints the old messages. Editing them is right: that fragment is pending on `main` (#30451, after rc.14), so it ships in the same release as this change and must describe that release. If a release is cut before this branch merges, the edit moves with the fragment. Design 9.4 and 14.6 carry the note.
+2. One lock (CR2-F17, SD2-F02): `MARKER_LOCK_KEY` is a constant; `markerLockKey`, the runner's `schemaName` option and the per-space `lockMarker` arguments are gone. No caller, doc or test uses them (`git grep`; the remaining `schemaName` hits are planner options). `spacesInApplyOrder` gives `migrate`, `migrate --show`, the aggregate planner and `db sign` their order. A lost compare-and-swap now reports that space as `conflict` and the other spaces commit, as design 8.1 now says; the `deferred.md` line is gone.
+3. `MIGRATION.MARKER_CAS_FAILURE` (SD2-F04): one payload, `space`, `expectedStorageHash`, `foundStorageHash`, `destinationStorageHash`, from the three runners and `db sign`; the error reference has one payload line. The runners read the marker again inside their own transaction after the update matched no row. That read cannot change the outcome, only what `found` reports; under the lock only a writer that skips the lock can move the marker, so `found` is current enough for a message.
+4. `SpaceSignature` (SD2-F05) has `status`: `created`, `updated` (with `previous`), `unchanged`, `conflict` (with `expected`, `found`). The CLI maps it to its JSON outcome, and the app and extension texts describe both shapes.
+5. Enrichment (SD2-F09) copies only `aggregateDescriptors`, `codecTypes`, `operationTypes` and `queryOperationTypes`. Keeping `operationTypes`, which only pgvector declares and nothing reads, is fine: removing it changes committed contracts, and `deferred.md` records the deletion.
+6. Refs not written (CR2-F18): the error names failed and conflicting spaces in `why` and `meta` (`failedSpaces`, `conflictSpaces`) and says signed markers "hold" their contracts; a test covers one signed, one failed and one conflicting space.
+7. Script (CR2-F15, CR2-F16, QA 2 and 3): `nativeType` is rewritten only on columns (both layouts) and `storage.types` entries, in `contract.json` and `contract.d.ts`, never inside a default; directory links are followed with a real-path guard, including a link to a directory outside the root, which the tests expect; it prints a summary and runs with `node` (Node 24.16, no warning). The two copies are identical. The test file is split into six files, the largest 231 lines.
+8. The rest: CR-F11 and CR2-F19 (comment on `writeLedgerEntry`), CR2-F20 (Ctrl-C), SD2-F03 (`conflict`; no `changed` status left), SD2-F08 and SD-F11 (`StorageTypeInstanceInput` derived and exported), SD2-F01 and SD-F07 (skill steps 4 and 5, one glob in three places, release step), SD2-F06 (slice 3 outline and halt condition), SD2-F07 (ADR 204), SD2-F10 (`deferred.md`).
+9. Manual QA defects 1 to 5: the texts no longer say the application logs the mismatch, name `node`, describe the summary, and drop the `DEFAULT '42'` claim. Slice 1's detection for `ts-contract-lists-extension-codecs` matches a user `contract.ts` that imports an extension's column types beside `defineContract` and skips emitted `contract.d.ts` and `migration.ts` (checked on samples and every tracked example and extension file). It no longer flags a file that imports the column types while `defineContract` is in another file; acceptable, because the build error names the fix.
+
+Telemetry backend: `apps/telemetry-backend/test/handler.test.ts` fails one test (`expected Temporal.Instant … to be an instance of Date`, line 116) on this tip and identically on slice 1's tip `f6a97fbd51` (run in a disposable checkout under `wip/`, removed). Slice 2 did not cause it. Since #30073 (`3af065ee50`, 2026-08-24) the contract stores `ingestedAt` with `pg/timestamptz-temporal@1`, which reads a `Temporal.Instant`; the test, last changed in `3dc98cbdd4`, still expects a `Date`. `main` has the same codec and test. No CI job runs it: `test:examples` filters `./examples/**` and the root Vitest projects are `packages/**`. It needs a ticket outside this project.
+
+Checks: the 27 touched Vitest files and the script's unchanged hash test, each run alone, then `test/integration/test/upgrade-instructions/` (88) and `scripts/lint-single-import-root.test.mjs` (9): all pass. `turbo run typecheck --continue`: 171 of 171. `lint:deps`, `lint:agent`, `lint:skills`: exit 0. `check:error-reference`: 367 codes. `check:upgrade-coverage --mode pr --prev bot/data-types-completion`: exit 0. Logs in `wip/review-logs/`.
 
 ### Dispatch f, round 2
 
