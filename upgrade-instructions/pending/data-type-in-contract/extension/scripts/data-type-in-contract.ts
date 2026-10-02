@@ -184,6 +184,11 @@ const COLUMN_DEFAULT_VALUE: readonly PathSegment[] = [
   'default',
   'value',
 ];
+const NATIVE_TYPE_PATHS: readonly (readonly PathSegment[])[] = [
+  ['storage', 'namespaces', '*', 'entries', 'table', '*', 'columns', '*'],
+  ['storage', 'namespaces', '*', 'tables', '*', 'columns', '*'],
+  ['storage', 'types', '*'],
+];
 const FRAMEWORK_PRESERVED_EMPTY: readonly (readonly PathSegment[])[] = [
   ['domain', 'namespaces'],
   ['domain', 'namespaces', '*'],
@@ -590,38 +595,40 @@ function rewriteContract(contract: JsonRecord, extra: ReadonlyMap<string, string
   const defaultRewrites = new Map<string, Json>();
   let changed = false;
 
-  const visit = (value: Json, path: readonly string[]): Json => {
-    if (Array.isArray(value)) return value.map((item) => visit(item, path));
-    if (!isRecord(value)) return value;
+  const rewriteEntry = (value: JsonRecord, path: readonly string[]): JsonRecord => {
     const codecId = value['codecId'];
-    if (typeof codecId === 'string' && typeof value['nativeType'] === 'string') {
-      const dataType = table[codecId];
-      if (dataType === undefined) {
-        unknownCodecs.add(codecId);
-        return value;
-      }
-      changed = true;
-      const { nativeType: _nativeType, ...rest } = value;
-      const rewritten = rewriteDefault(target, codecId, { ...rest, dataType });
-      const before = value['default'];
-      const after = rewritten['default'];
-      if (isRecord(before) && isRecord(after) && before['value'] !== after['value']) {
-        const columnKey = path.slice(-3);
-        const newValue = after['value'];
-        if (columnKey[1] === 'columns' && newValue !== undefined)
-          defaultRewrites.set(`${columnKey[0]}\u0000${columnKey[2]}`, newValue);
-      }
-      return rewritten;
+    if (typeof codecId !== 'string' || typeof value['nativeType'] !== 'string') return value;
+    const dataType = table[codecId];
+    if (dataType === undefined) {
+      unknownCodecs.add(codecId);
+      return value;
     }
-    const result: JsonRecord = {};
-    for (const [key, child] of Object.entries(value)) result[key] = visit(child, [...path, key]);
-    return result;
+    changed = true;
+    const { nativeType: _nativeType, ...rest } = value;
+    const rewritten = rewriteDefault(target, codecId, { ...rest, dataType });
+    const before = value['default'];
+    const after = rewritten['default'];
+    if (isRecord(before) && isRecord(after) && before['value'] !== after['value']) {
+      const columnKey = path.slice(-3);
+      const newValue = after['value'];
+      if (columnKey[1] === 'columns' && newValue !== undefined)
+        defaultRewrites.set(`${columnKey[0]}\u0000${columnKey[2]}`, newValue);
+    }
+    return rewritten;
+  };
+
+  const visit = (value: Json, path: readonly string[]): Json => {
+    if (!isRecord(value)) return value;
+    if (NATIVE_TYPE_PATHS.some((pattern) => matchesPath(path, pattern)))
+      return rewriteEntry(value, path);
+    const leadsToEntry = NATIVE_TYPE_PATHS.some(
+      (pattern) => path.length < pattern.length && matchesPath(path, pattern.slice(0, path.length)),
+    );
+    return leadsToEntry ? mapRecord(value, (key, child) => visit(child, [...path, key])) : value;
   };
 
   const rewritten: JsonRecord = {};
-  for (const [key, child] of Object.entries(contract)) {
-    rewritten[key] = key === 'extensions' || key === '_generated' ? child : visit(child, [key]);
-  }
+  for (const [key, child] of Object.entries(contract)) rewritten[key] = visit(child, [key]);
   const extensions = contract['extensions'];
   for (const pack of isRecord(extensions) ? Object.values(extensions) : []) {
     const types = isRecord(pack) ? pack['types'] : undefined;
@@ -720,6 +727,33 @@ function innermostBlock(blocks: readonly Block[], position: number): Block | und
       found = block;
   }
   return found;
+}
+
+function isColumnBlock(block: Block): boolean {
+  return block.parent?.label === 'columns';
+}
+
+function isStorageTypeBlock(blocks: readonly Block[], block: Block): boolean {
+  const types = block.parent;
+  return (
+    types?.label === 'types' &&
+    blocks.some((other) => other.parent === types.parent && other.label === 'namespaces')
+  );
+}
+
+function isInColumnDefault(block: Block): boolean {
+  for (let ancestor = block.parent; ancestor !== undefined; ancestor = ancestor.parent)
+    if (
+      ancestor.label === 'default' &&
+      ancestor.parent !== undefined &&
+      isColumnBlock(ancestor.parent)
+    )
+      return true;
+  return false;
+}
+
+function holdsNativeType(blocks: readonly Block[], block: Block): boolean {
+  return (isColumnBlock(block) || isStorageTypeBlock(blocks, block)) && !isInColumnDefault(block);
 }
 
 function prettierString(value: string): string {
@@ -838,7 +872,7 @@ function rewriteDts(
 
   for (const match of text.matchAll(/readonly nativeType: (['"])(?:\\.|(?!\1).)*\1/g)) {
     const block = innermostBlock(blocks, match.index);
-    if (block === undefined) continue;
+    if (block === undefined || !holdsNativeType(blocks, block)) continue;
     const codecId = memberOf(text, blocks, block, 'codecId');
     const dataType = codecId === undefined ? undefined : table[codecId];
     if (dataType === undefined) continue;

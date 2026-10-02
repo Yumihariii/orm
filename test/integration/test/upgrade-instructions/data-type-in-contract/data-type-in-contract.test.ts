@@ -144,6 +144,47 @@ describe('migrations outside a directory named migrations', () => {
   }
 });
 
+describe('a JSON column whose default document holds codecId and nativeType', () => {
+  const document = { codecId: 'pg/text@1', nativeType: 'text' };
+  const documentDts =
+    "DefaultLiteralValue<'pg/jsonb@1', { readonly codecId: 'pg/text@1'; readonly nativeType: 'text' }>";
+  const outcome = (run: Run) => {
+    const tree = readTree(run.root);
+    const contract = JSON.parse(tree['prisma/contract.json'] ?? '{}');
+    return {
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree,
+      document:
+        contract.storage.namespaces.public.entries.table.setting.columns.payload.default.value,
+      documentInDts: tree['prisma/contract.d.ts']?.includes(documentDts),
+    };
+  };
+
+  it('leaves a new-format contract unchanged', () => {
+    expect(outcome(upgrade('json-default-document', 'after'))).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      tree: expectedTree('json-default-document', 'after'),
+      document,
+      documentInDts: true,
+    });
+  });
+
+  it('rewrites the column of an old-format contract and leaves the document as it was', () => {
+    expect(outcome(upgrade('json-default-document'))).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      tree: expectedTree('json-default-document', 'after'),
+      document,
+      documentInDts: true,
+    });
+  });
+});
+
 describe('a SQLite project with enums typed by integer codecs', () => {
   it('rewrites their value sets, domain members and defaults as digit text', () => {
     const run = upgrade('sqlite-integer-enums');

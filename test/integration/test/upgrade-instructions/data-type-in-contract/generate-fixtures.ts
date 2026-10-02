@@ -1082,6 +1082,44 @@ function staleHash(format: Format): Record<string, string> {
   };
 }
 
+const documentWithTypeName = "{ readonly codecId: 'pg/text@1'; readonly nativeType: 'text' }";
+
+const jsonDocumentSpec: ContractSpec = {
+  target: 'postgres',
+  tables: {
+    setting: [
+      {
+        name: 'id',
+        codecId: 'pg/uuid@1',
+        nativeType: 'uuid',
+        dataType: 'pg/uuid',
+        nullable: false,
+      },
+      {
+        name: 'payload',
+        codecId: 'pg/jsonb@1',
+        nativeType: 'jsonb',
+        dataType: 'pg/jsonb',
+        nullable: false,
+        literalDefault: {
+          old: { codecId: 'pg/text@1', nativeType: 'text' },
+          new: { codecId: 'pg/text@1', nativeType: 'text' },
+          oldTs: documentWithTypeName,
+          newTs: documentWithTypeName,
+        },
+      },
+    ],
+  },
+};
+
+function jsonDefaultDocument(format: Format): Record<string, string> {
+  const files = contractFiles(jsonDocumentSpec, format);
+  return {
+    'prisma/contract.json': emittedJson(files.contract),
+    'prisma/contract.d.ts': files.dts,
+  };
+}
+
 rmSync(fixturesRoot, { recursive: true, force: true });
 writeCase('postgres-extension-space', postgresExtensionSpace);
 writeCase('extension-package', extensionPackage);
@@ -1093,4 +1131,5 @@ writeCase('unknown-target', unknownTarget);
 writeCase('db-migrations', dbMigrations);
 writeCase('two-migration-roots', twoMigrationRoots);
 writeCase('sqlite-integer-enums', sqliteIntegerEnums);
+writeCase('json-default-document', jsonDefaultDocument);
 writeUnchangedCase('snapshot-collision', snapshotCollision());
