@@ -151,6 +151,28 @@ describe('a SQLite project with enums typed by integer codecs', () => {
   });
 });
 
+describe('a SQLite project with an enum typed by sqlite/json@1', () => {
+  it('rewrites its value set, domain members and default as the JSON text of each document', () => {
+    const run = upgrade('sqlite-json-enums');
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(run.root),
+    }).toEqual({
+      status: 0,
+      stdout: upgradeSummary('Rewrote 5 files and renamed 1 snapshot directory.', [
+        [
+          '10bb15c2ae8fc4a31a394f5a046eb75fe13e6a78fb4c99b1e0397d038ba25212',
+          '66a408f76796db73433c83fbd088c87d168b3800d3f0a737059e3c1f8fd013b0',
+        ],
+      ]),
+      stderr: '',
+      tree: expectedTree('sqlite-json-enums', 'after'),
+    });
+  });
+});
+
 describe('an extension package', () => {
   it('rewrites the contract space with the extension copy of the script', () => {
     const run = upgrade('extension-package', 'before', extensionScript);

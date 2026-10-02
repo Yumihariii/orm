@@ -216,4 +216,25 @@ describe('enum members on SQLite', () => {
       expect(await storedEnumValues(codecId, `Low = ${written}`)).toEqual({ values: [stored] });
     },
   );
+
+  it.each([
+    [`'"low"'`, '"low"'],
+    [`'{"b": 2, "a": 1}'`, '{"a":1,"b":2}'],
+    ['"1"', '1'],
+  ])(
+    'accepts a sqlite/json@1 member written as a string of JSON text, %s, and stores the text the upgrade script writes',
+    async (written, stored) => {
+      expect(await storedEnumValues('sqlite/json@1', `Low = ${written}`)).toEqual({
+        values: [stored],
+      });
+    },
+  );
+
+  it('refuses a sqlite/json@1 member written as a number, which no cast takes to text', async () => {
+    expect((await storedEnumValues('sqlite/json@1', 'Low = 1')).diagnostics).toContainEqual({
+      code: 'PSL_EXTENSION_INVALID_VALUE',
+      message:
+        'enum "Priority" member "Low": sqlite/text has no cast from sqlite/integer; it casts from nothing',
+    });
+  });
 });

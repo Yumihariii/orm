@@ -882,6 +882,54 @@ function sqliteIntegerEnums(format: Format): Record<string, string> {
   return singleSpaceProject(sqliteEnums, format, 'prisma', 'migrations');
 }
 
+const jsonMember = (name: string, value: Json, oldTs: string) => ({
+  name,
+  old: value,
+  new: JSON.stringify(value),
+  oldTs,
+  newTs: `'${JSON.stringify(value)}'`,
+});
+
+const sqliteJsonEnumSpec: ContractSpec = {
+  target: 'sqlite',
+  tables: {
+    lamp: [
+      {
+        name: 'id',
+        codecId: 'sqlite/integer@1',
+        nativeType: 'integer',
+        dataType: 'sqlite/integer',
+        nullable: false,
+      },
+      {
+        name: 'shade',
+        codecId: 'sqlite/json@1',
+        nativeType: 'text',
+        dataType: 'sqlite/text',
+        nullable: false,
+        valueSet: 'Shade',
+        literalDefault: { old: 'low', new: '"low"', oldTs: "'low'", newTs: `'"low"'` },
+      },
+    ],
+  },
+  enums: [
+    {
+      name: 'Shade',
+      codecId: 'sqlite/json@1',
+      members: [
+        jsonMember('Low', 'low', "'low'"),
+        jsonMember('Level', 1, '1'),
+        jsonMember('On', true, 'true'),
+        jsonMember('Unset', null, 'null'),
+      ],
+    },
+  ],
+};
+
+function sqliteJsonEnums(format: Format): Record<string, string> {
+  return singleSpaceProject(sqliteJsonEnumSpec, format, 'prisma', 'migrations');
+}
+
 const unknownCodecSpec: ContractSpec = {
   target: 'postgres',
   tables: {
@@ -1134,5 +1182,6 @@ writeCase('unknown-target', unknownTarget);
 writeCase('db-migrations', dbMigrations);
 writeCase('two-migration-roots', twoMigrationRoots);
 writeCase('sqlite-integer-enums', sqliteIntegerEnums);
+writeCase('sqlite-json-enums', sqliteJsonEnums);
 writeCase('json-default-document', jsonDefaultDocument);
 writeUnchangedCase('snapshot-collision', snapshotCollision());

@@ -422,6 +422,13 @@ interface Rewrite {
   readonly unknownCodecs: readonly string[];
   readonly defaultRewrites: ReadonlyMap<string, Json>;
   readonly integerEnums: ReadonlySet<string>;
+  readonly jsonEnums: ReadonlyMap<string, JsonEnumValues>;
+}
+
+/** The rewritten values of an enum typed by `sqlite/json@1`: its value set and its members by name. */
+interface JsonEnumValues {
+  values: readonly Json[] | undefined;
+  readonly members: Map<string, Json>;
 }
 
 function rewriteDefault(target: string, codecId: string, value: JsonRecord): JsonRecord {
@@ -457,14 +464,24 @@ function enumKey(namespaceId: string, name: string): string {
 }
 
 /**
- * On SQLite the integer codecs store digit text, so the members of an enum typed by one, in the
- * domain and in the storage value set its columns name, become digit text too.
+ * On SQLite the integer codecs store digit text and `sqlite/json@1` stores the JSON text of a
+ * document, so the members of an enum typed by one of them, in the domain and in the storage value
+ * set its columns name, are rewritten to that text too.
  */
-function rewriteSqliteIntegerEnums(contract: JsonRecord): {
+function rewriteSqliteEnums(contract: JsonRecord): {
   readonly contract: JsonRecord;
   readonly integerEnums: ReadonlySet<string>;
+  readonly jsonEnums: ReadonlyMap<string, JsonEnumValues>;
 } {
   const integerEnums = new Set<string>();
+  const jsonEnums = new Map<string, JsonEnumValues>();
+  const jsonEnum = (key: string): JsonEnumValues => {
+    const existing = jsonEnums.get(key);
+    if (existing !== undefined) return existing;
+    const created: JsonEnumValues = { values: undefined, members: new Map() };
+    jsonEnums.set(key, created);
+    return created;
+  };
   const domainCodecs = new Map<string, string>();
   const domain = mapRecord(contract['domain'] ?? null, (key, namespaces) =>
     key !== 'namespaces'
@@ -477,22 +494,33 @@ function rewriteSqliteIntegerEnums(contract: JsonRecord): {
                   const codecId = isRecord(enumType) ? enumType['codecId'] : undefined;
                   if (typeof codecId === 'string')
                     domainCodecs.set(enumKey(namespaceId, name), codecId);
-                  if (
-                    !isRecord(enumType) ||
-                    typeof codecId !== 'string' ||
-                    !SQLITE_INTEGER_CODECS.has(codecId)
-                  )
+                  const members = isRecord(enumType) ? enumType['members'] : undefined;
+                  if (!isRecord(enumType) || typeof codecId !== 'string' || !Array.isArray(members))
                     return enumType;
-                  const members = enumType['members'];
-                  if (!Array.isArray(members)) return enumType;
-                  integerEnums.add(enumKey(namespaceId, name));
+                  const key = enumKey(namespaceId, name);
+                  if (SQLITE_INTEGER_CODECS.has(codecId)) {
+                    integerEnums.add(key);
+                    return {
+                      ...enumType,
+                      members: members.map((member) =>
+                        isRecord(member) && member['value'] !== undefined
+                          ? { ...member, value: digitText(member['value']) }
+                          : member,
+                      ),
+                    };
+                  }
+                  if (codecId !== SQLITE_JSON_CODEC) return enumType;
+                  const rewritten = jsonEnum(key);
                   return {
                     ...enumType,
-                    members: members.map((member) =>
-                      isRecord(member) && member['value'] !== undefined
-                        ? { ...member, value: digitText(member['value']) }
-                        : member,
-                    ),
+                    members: members.map((member) => {
+                      const value = isRecord(member) ? member['value'] : undefined;
+                      if (!isRecord(member) || value === undefined) return member;
+                      const text = canonicalizeJson(value);
+                      if (typeof member['name'] === 'string')
+                        rewritten.members.set(member['name'], text);
+                      return { ...member, value: text };
+                    }),
                   };
                 }),
           ),
@@ -535,15 +563,16 @@ function rewriteSqliteIntegerEnums(contract: JsonRecord): {
                         const key = enumKey(namespaceId, name);
                         const codecId = columnCodecs.get(key) ?? domainCodecs.get(key);
                         const values = isRecord(valueSet) ? valueSet['values'] : undefined;
-                        if (
-                          codecId === undefined ||
-                          !SQLITE_INTEGER_CODECS.has(codecId) ||
-                          !isRecord(valueSet) ||
-                          !Array.isArray(values)
-                        )
+                        if (codecId === undefined || !isRecord(valueSet) || !Array.isArray(values))
                           return valueSet;
-                        integerEnums.add(key);
-                        return { ...valueSet, values: values.map(digitText) };
+                        if (SQLITE_INTEGER_CODECS.has(codecId)) {
+                          integerEnums.add(key);
+                          return { ...valueSet, values: values.map(digitText) };
+                        }
+                        if (codecId !== SQLITE_JSON_CODEC) return valueSet;
+                        const texts = values.map(canonicalizeJson);
+                        jsonEnum(key).values = texts;
+                        return { ...valueSet, values: texts };
                       }),
                 ),
           ),
@@ -557,6 +586,7 @@ function rewriteSqliteIntegerEnums(contract: JsonRecord): {
       ...(storage === undefined ? {} : { storage: nextStorage }),
     },
     integerEnums,
+    jsonEnums,
   };
 }
 
@@ -660,14 +690,15 @@ function rewriteContract(contract: JsonRecord, extra: ReadonlyMap<string, string
   }
   const enums =
     target === 'sqlite' && changed
-      ? rewriteSqliteIntegerEnums(rewritten)
-      : { contract: rewritten, integerEnums: new Set<string>() };
+      ? rewriteSqliteEnums(rewritten)
+      : { contract: rewritten, integerEnums: new Set<string>(), jsonEnums: new Map() };
   return {
     contract: enums.contract,
     changed,
     unknownCodecs: [...unknownCodecs].sort(compareCodeUnits),
     defaultRewrites,
     integerEnums: enums.integerEnums,
+    jsonEnums: enums.jsonEnums,
   };
 }
 
@@ -828,6 +859,27 @@ function memberOf(
   return undefined;
 }
 
+/** The end of the type literal that starts at `start`: the first `;`, `,` or closing bracket outside it. */
+function literalEnd(text: string, start: number): number {
+  let depth = 0;
+  let quote: string | undefined;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (quote !== undefined) {
+      if (char === '\\') index++;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') quote = char;
+    else if (char === '{' || char === '[' || char === '(' || char === '<') depth++;
+    else if (char === '}' || char === ']' || char === ')' || char === '>') {
+      if (depth === 0) return index;
+      depth--;
+    } else if ((char === ';' || char === ',') && depth === 0) return index;
+  }
+  return text.length;
+}
+
 function bracketEnd(text: string, open: number): number {
   let depth = 0;
   let quote: string | undefined;
@@ -871,6 +923,7 @@ function rewriteDts(
   extra: ReadonlyMap<string, string>,
   defaultRewrites: ReadonlyMap<string, Json>,
   integerEnums: ReadonlySet<string>,
+  jsonEnums: ReadonlyMap<string, JsonEnumValues>,
   hashes: ReadonlyMap<string, string>,
 ): string {
   const table = dataTypesFor(target, extra);
@@ -945,6 +998,49 @@ function rewriteDts(
     edits.push({ start, end: start + digits.length, text: quoteIntegers(digits) });
   }
 
+  for (const match of text.matchAll(/readonly values: readonly \[/g)) {
+    const valueSet = innermostBlock(blocks, match.index);
+    const kind = valueSet?.parent;
+    const namespace = kind?.parent?.parent;
+    if (
+      valueSet === undefined ||
+      kind?.label !== 'valueSet' ||
+      kind.parent?.label !== 'entries' ||
+      namespace === undefined
+    )
+      continue;
+    const values = jsonEnums.get(enumKey(namespace.label, valueSet.label))?.values;
+    if (values === undefined) continue;
+    const open = match.index + match[0].length - 1;
+    edits.push({
+      start: open + 1,
+      end: bracketEnd(text, open) - 1,
+      text: values.map(typeLiteral).join(', '),
+    });
+  }
+
+  for (const match of text.matchAll(/readonly value: /g)) {
+    const member = innermostBlock(blocks, match.index);
+    const enumType = member?.parent;
+    const namespace = enumType?.parent?.parent;
+    if (
+      member === undefined ||
+      member.label !== '' ||
+      enumType?.parent?.label !== 'enum' ||
+      namespace === undefined
+    )
+      continue;
+    const name = memberOf(text, blocks, member, 'name');
+    const value =
+      name === undefined
+        ? undefined
+        : jsonEnums.get(enumKey(namespace.label, enumType.label))?.members.get(name);
+    if (value === undefined) continue;
+    const start = match.index + match[0].length;
+    const end = start + text.slice(start, literalEnd(text, start)).trimEnd().length;
+    edits.push({ start, end, text: typeLiteral(value) });
+  }
+
   for (const match of text.matchAll(/(['"])([0-9a-f]{64})\1/g)) {
     const hash = match[2];
     const next = hash === undefined ? undefined : hashes.get(hash);
@@ -978,6 +1074,7 @@ interface ContractPlan {
   readonly target: string;
   readonly defaultRewrites: ReadonlyMap<string, Json>;
   readonly integerEnums: ReadonlySet<string>;
+  readonly jsonEnums: ReadonlyMap<string, JsonEnumValues>;
 }
 
 function readDirectory(dir: string): Map<string, string> {
@@ -1098,6 +1195,7 @@ function main({ root, dataTypes, errors }: Options): number {
       target: contract['target'],
       defaultRewrites: rewrite.defaultRewrites,
       integerEnums: rewrite.integerEnums,
+      jsonEnums: rewrite.jsonEnums,
     });
   }
 
@@ -1135,6 +1233,7 @@ function main({ root, dataTypes, errors }: Options): number {
           dataTypes,
           plan.defaultRewrites,
           plan.integerEnums,
+          plan.jsonEnums,
           dtsHashes,
         )
       : undefined;
