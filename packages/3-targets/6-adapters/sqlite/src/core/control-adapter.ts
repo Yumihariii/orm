@@ -1,4 +1,4 @@
-import type { ContractMarkerRecord, LedgerEntryRecord } from '@internal/contract/types';
+import type { Contract, ContractMarkerRecord, LedgerEntryRecord } from '@internal/contract/types';
 import { parseMarkerRowSafely, withMarkerReadErrorHandling } from '@internal/errors/execution';
 import { checkSqlDefaultBody } from '@internal/family-sql/control';
 import type { SqlControlAdapter } from '@internal/family-sql/control-adapter';
@@ -444,7 +444,7 @@ export class SqliteControlAdapter implements SqlControlAdapter<'sqlite'> {
     driver: SqlControlDriverInstance<'sqlite'>,
     fn: () => Promise<T>,
   ): Promise<T> {
-    await driver.query('BEGIN');
+    await driver.query('BEGIN IMMEDIATE');
     let result: T;
     try {
       result = await fn();
@@ -465,6 +465,12 @@ export class SqliteControlAdapter implements SqlControlAdapter<'sqlite'> {
   /**
    * Appends a ledger entry for `space`. See the `SqlControlAdapter.writeLedgerEntry` contract.
    */
+  async lockMarker(
+    _driver: SqlControlDriverInstance<'sqlite'>,
+    _space: string,
+    _contract: Contract,
+  ): Promise<void> {}
+
   async writeLedgerEntry(
     driver: SqlControlDriverInstance<'sqlite'>,
     space: string,

@@ -689,11 +689,12 @@ The command needs a `driver` in the config, as `db verify` does.
 **Signing Process:**
 
 1. **Load the contract spaces**: the application contract (emitted, or the one the contract reference names) and the contract space of every extension in `config.extensions`, as `migrate` loads them.
-2. **Verify each space**: each space's contract is checked against the live schema without strict mode.
-3. **Sign**: the family's `signSpaces` writes the marker of every space that verified. On PostgreSQL and SQLite all markers are written in one transaction, so a failed write leaves every marker as it was. A marker that already holds the contract's hashes is left unchanged.
-4. **Advance refs**: each signed or unchanged space's `db` ref (or the `--advance-ref` name) is advanced to its contract hash, and the contract is written into that space's snapshot store. `--no-advance-ref` skips this step.
+2. **Read the markers**: the marker of every space is read before the schema is.
+3. **Verify each space**: each space's contract is checked against the live schema without strict mode.
+4. **Sign**: the family's `signSpaces` writes the marker of every space that verified, but only while the marker still holds what step 2 read. On PostgreSQL and SQLite it first takes the lock `migrate` takes (a transaction-scoped advisory lock per space on PostgreSQL, `BEGIN IMMEDIATE` on SQLite), and all markers are written in one transaction, so a failed write leaves every marker as it was. A marker that already holds the contract's hashes is left unchanged.
+5. **Advance refs**: each signed or unchanged space's `db` ref (or the `--advance-ref` name) is advanced to its contract hash, and the contract is written into that space's snapshot store. `--no-advance-ref` skips this step.
 
-A space that fails verification is not signed. Its differences are reported, the other spaces are still signed, and the command exits with code 4.
+A space that fails verification is not signed. Its differences are reported, the other spaces are still signed, and the command exits with code 4. A space whose marker another process, such as `migrate`, changed after step 2 is not signed either: its marker is left as that process wrote it, the other spaces are still signed, and the command exits with code 4. Running `db sign` again once the other process has finished signs it.
 
 **Output Format (TTY):**
 
@@ -738,12 +739,12 @@ database  postgresql://localhost/app
 }
 ```
 
-`status` is `signed`, `unchanged` or `failed`. A failed space carries `contract: { storageHash }` and `schema`, the schema verification result, in place of `marker`; `ok` is then `false` and `summary` names the failed and the signed spaces, for example `Database schema does not satisfy contract for space "app"; signed "pgvector"`. Each failed space also produces one `CONTRACT.SCHEMA_VERIFICATION_FAILED` diagnostic with `space` in its meta.
+`status` is `signed`, `unchanged`, `failed` or `changed`. A failed space carries `contract: { storageHash }` and `schema`, the schema verification result, in place of `marker`; `ok` is then `false` and `summary` names the failed and the signed spaces, for example `Database schema does not satisfy contract for space "app"; signed "pgvector"`. Each failed space also produces one `CONTRACT.SCHEMA_VERIFICATION_FAILED` diagnostic with `space` in its meta. A changed space carries `markerChanged: { verified, found }`, the marker hashes `db sign` read and the ones it found when it came to write, in place of `marker`; `summary` then says, for example, `Marker of space "app" changed while db sign ran; signed "pgvector"`, and the space produces one `MIGRATION.MARKER_CAS_FAILURE` diagnostic with `space`, `verifiedStorageHash` and `foundStorageHash` in its meta.
 
 **Exit codes:**
 - `0`: every space signed or already signed
 - `2`: the command could not run (unresolvable contract reference, no emitted contract, unreachable database, missing driver or connection)
-- `4`: schema verification failed for at least one space, whose signature was not written
+- `4`: schema verification failed for at least one space, or its marker changed while `db sign` ran; that space's signature was not written
 
 **Relationship to Other Commands:**
 - **`db verify`**: checks that the marker exists and matches the contract, then runs schema verification by default. `db sign` writes the marker that `db verify` checks.
@@ -767,12 +768,16 @@ interface ControlFamilyInstance {
 
   signSpaces(options: {
     driver: ControlDriverInstance;
-    spaces: readonly { space: string; contract: Contract }[];
+    spaces: readonly {
+      space: string;
+      contract: Contract;
+      verifiedMarker: { storageHash: string; profileHash: string } | null;
+    }[];
   }): Promise<readonly SpaceSignature[]>;
 }
 ```
 
-`signSpaces` writes the marker of each space it is given with its contract's hashes and returns one `{ space, contract, marker }` per space. It does not verify; the command verifies every space first. The SQL family implements it through `SqlControlAdapter.withTransaction`; the Mongo family writes each marker on its own.
+`signSpaces` writes the marker of each space it is given with its contract's hashes, if the marker still holds `verifiedMarker`, and returns one `{ space, contract, marker }` per space, or `{ space, contract, markerChanged }` for a space whose marker no longer holds it. It does not verify; the command verifies every space first. The SQL family implements it through `SqlControlAdapter.withTransaction` and `SqlControlAdapter.lockMarker`, taking the locks in the order it is given the spaces; `db sign` gives them in the order `migrate` applies them, extension spaces first, so the two cannot deadlock. The Mongo family writes each marker on its own.
 
 ### `prisma db init`
 

@@ -1,10 +1,14 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { createSqliteBuiltinCodecLookup } from '@internal/target-sqlite/codecs';
+import { createContract } from '@repo/test-utils';
+import { join } from 'pathe';
 import { describe, expect, it } from 'vitest';
 import { SqliteControlAdapter } from '../src/core/control-adapter';
 
-function createMemoryDriver() {
-  const db = new DatabaseSync(':memory:');
+function createMemoryDriver(location = ':memory:') {
+  const db = new DatabaseSync(location);
   const statements: string[] = [];
   return {
     familyId: 'sql' as const,
@@ -44,7 +48,7 @@ describe('SqliteControlAdapter.withTransaction', () => {
     expect(await countRows(driver)).toBe(1);
     expect(driver.statements).toEqual([
       'CREATE TABLE t (x integer)',
-      'BEGIN',
+      'BEGIN IMMEDIATE',
       'INSERT INTO t (x) VALUES (1)',
       'COMMIT',
       'SELECT count(*) AS n FROM t',
@@ -65,7 +69,7 @@ describe('SqliteControlAdapter.withTransaction', () => {
 
     expect(await countRows(driver)).toBe(0);
     expect(driver.statements.slice(1, 4)).toEqual([
-      'BEGIN',
+      'BEGIN IMMEDIATE',
       'INSERT INTO t (x) VALUES (1)',
       'ROLLBACK',
     ]);
@@ -105,5 +109,36 @@ describe('SqliteControlAdapter.withTransaction', () => {
       ).rejects.toBe(failure);
       expect(failure.cause).toBe(original);
     });
+  });
+});
+
+describe('SqliteControlAdapter marker lock', () => {
+  const adapter = new SqliteControlAdapter(createSqliteBuiltinCodecLookup());
+
+  it('holds the database write lock from the start of the transaction, so the migration runner cannot begin', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sqlite-sign-lock-'));
+    const location = join(dir, 'db.sqlite');
+    const signer = createMemoryDriver(location);
+    const runner = new DatabaseSync(location);
+    try {
+      await signer.query('CREATE TABLE t (x integer)');
+
+      await adapter.withTransaction(signer, async () => {
+        await adapter.lockMarker(signer, 'app', createContract());
+        expect(() => runner.exec('BEGIN EXCLUSIVE')).toThrow(/database is locked/);
+      });
+    } finally {
+      runner.close();
+      await signer.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('issues no statement of its own, because the transaction already holds the lock', async () => {
+    const driver = createMemoryDriver();
+
+    await adapter.lockMarker(driver, 'app', createContract());
+
+    expect(driver.statements).toEqual([]);
   });
 });

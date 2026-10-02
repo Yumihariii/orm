@@ -14,7 +14,6 @@ import type {
 import { runnerFailure, runnerSuccess } from '@internal/family-sql/control';
 import type { MigrationRunnerResult } from '@internal/framework-components/control';
 import { APP_SPACE_ID } from '@internal/framework-components/control';
-import { UNBOUND_NAMESPACE_ID } from '@internal/framework-components/ir';
 import type { SqlControlDriverInstance, SqlStorage } from '@internal/sql-contract/types';
 import { SqlQueryError } from '@internal/sql-errors';
 import type { SqlExecuteRequest } from '@internal/sql-relational-core/ast';
@@ -24,14 +23,13 @@ import { InternalError } from '@internal/utils/internal-error';
 import type { Result } from '@internal/utils/result';
 import { notOk, ok, okVoid } from '@internal/utils/result';
 import { postgresError } from '../errors';
+import { MARKER_LOCK_SQL, markerLockKey } from './marker-lock';
 import type { PostgresPlanTargetDetails } from './planner-target-details';
 
 interface ApplyPlanSuccessValue {
   readonly operationsExecuted: number;
   readonly executedOperations: readonly SqlMigrationPlanOperation<PostgresPlanTargetDetails>[];
 }
-
-const LOCK_DOMAIN = 'prisma_8.contract.marker';
 
 /**
  * Deep clones and freezes a record object to prevent mutation.
@@ -77,12 +75,6 @@ class PostgresMigrationRunner implements SqlMigrationRunner<PostgresPlanTargetDe
   async executeOnConnection(
     options: SqlMigrationRunnerExecuteOptions<PostgresPlanTargetDetails>,
   ): Promise<SqlMigrationRunnerResult> {
-    const schema =
-      options.schemaName ??
-      Object.keys(options.destinationContract.storage.namespaces).find(
-        (id) => id !== UNBOUND_NAMESPACE_ID,
-      ) ??
-      UNBOUND_NAMESPACE_ID;
     const driver = options.driver;
     if (options.space !== undefined && options.space !== options.plan.spaceId) {
       throw postgresError(
@@ -92,7 +84,7 @@ class PostgresMigrationRunner implements SqlMigrationRunner<PostgresPlanTargetDe
       );
     }
     const space = options.plan.spaceId;
-    const lockKey = `${LOCK_DOMAIN}:${schema}:${space}`;
+    const lockKey = markerLockKey(options.destinationContract, space, options.schemaName);
 
     // Materialize any async ops before running checks or executing.
     const planOps = blindCast<
@@ -682,7 +674,7 @@ class PostgresMigrationRunner implements SqlMigrationRunner<PostgresPlanTargetDe
     driver: SqlMigrationRunnerExecuteOptions<PostgresPlanTargetDetails>['driver'],
     key: string,
   ): Promise<void> {
-    await driver.query('select pg_advisory_xact_lock(hashtext($1))', [key]);
+    await driver.query(MARKER_LOCK_SQL, [key]);
   }
 
   private async beginTransaction(

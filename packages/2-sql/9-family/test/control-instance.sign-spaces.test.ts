@@ -41,6 +41,9 @@ function createMarkerStore(
         throw error;
       }
     },
+    async lockMarker(_driver: unknown, space: string) {
+      events.push(`lock ${space}`);
+    },
     async readMarker(_driver: unknown, space: string) {
       const stored = markers.get(space);
       return stored === undefined
@@ -87,6 +90,7 @@ function createMarkerStore(
 const driver = {} as SqlControlDriverInstance<string>;
 const appContract = buildContract();
 const extContract = buildContract({ storageHash: EXT_HASH, profileHash: 'ext-profile' });
+const appHashes = { storageHash: FIXTURE_HASH, profileHash: 'fixture-profile-v1' };
 
 describe('sql family signSpaces', () => {
   it('writes the marker of every space in one transaction', async () => {
@@ -97,15 +101,19 @@ describe('sql family signSpaces', () => {
     const signatures = await store.instance.signSpaces({
       driver,
       spaces: [
-        { space: APP_SPACE_ID, contract: appContract },
-        { space: EXT_SPACE_ID, contract: extContract },
+        { space: APP_SPACE_ID, contract: appContract, verifiedMarker: null },
+        {
+          space: EXT_SPACE_ID,
+          contract: extContract,
+          verifiedMarker: { storageHash: 'old-ext', profileHash: 'old-ext-profile' },
+        },
       ],
     });
 
     expect(signatures).toEqual([
       {
         space: APP_SPACE_ID,
-        contract: { storageHash: FIXTURE_HASH, profileHash: 'fixture-profile-v1' },
+        contract: appHashes,
         marker: { created: true, updated: false },
       },
       {
@@ -118,7 +126,14 @@ describe('sql family signSpaces', () => {
         },
       },
     ]);
-    expect(store.events).toEqual(['BEGIN', 'insert app', `update ${EXT_SPACE_ID}`, 'COMMIT']);
+    expect(store.events).toEqual([
+      'BEGIN',
+      'lock app',
+      `lock ${EXT_SPACE_ID}`,
+      'insert app',
+      `update ${EXT_SPACE_ID}`,
+      'COMMIT',
+    ]);
     expect(store.markers()).toEqual({
       [APP_SPACE_ID]: { storageHash: FIXTURE_HASH, profileHash: 'fixture-profile-v1' },
       [EXT_SPACE_ID]: { storageHash: EXT_HASH, profileHash: 'ext-profile' },
@@ -132,17 +147,17 @@ describe('sql family signSpaces', () => {
 
     const signatures = await store.instance.signSpaces({
       driver,
-      spaces: [{ space: APP_SPACE_ID, contract: appContract }],
+      spaces: [{ space: APP_SPACE_ID, contract: appContract, verifiedMarker: appHashes }],
     });
 
     expect(signatures).toEqual([
       {
         space: APP_SPACE_ID,
-        contract: { storageHash: FIXTURE_HASH, profileHash: 'fixture-profile-v1' },
+        contract: appHashes,
         marker: { created: false, updated: false },
       },
     ]);
-    expect(store.events).toEqual(['BEGIN', 'COMMIT']);
+    expect(store.events).toEqual(['BEGIN', 'lock app', 'COMMIT']);
   });
 
   it('rolls back every marker write when one space loses the compare-and-swap', async () => {
@@ -158,8 +173,16 @@ describe('sql family signSpaces', () => {
       store.instance.signSpaces({
         driver,
         spaces: [
-          { space: APP_SPACE_ID, contract: appContract },
-          { space: EXT_SPACE_ID, contract: extContract },
+          {
+            space: APP_SPACE_ID,
+            contract: appContract,
+            verifiedMarker: { storageHash: 'old-app', profileHash: 'old-app-profile' },
+          },
+          {
+            space: EXT_SPACE_ID,
+            contract: extContract,
+            verifiedMarker: { storageHash: 'old-ext', profileHash: 'old-ext-profile' },
+          },
         ],
       }),
     ).rejects.toMatchObject({
@@ -167,10 +190,87 @@ describe('sql family signSpaces', () => {
       meta: { space: EXT_SPACE_ID },
     });
 
-    expect(store.events).toEqual(['BEGIN', 'update app', `update ${EXT_SPACE_ID}`, 'ROLLBACK']);
+    expect(store.events).toEqual([
+      'BEGIN',
+      'lock app',
+      `lock ${EXT_SPACE_ID}`,
+      'update app',
+      `update ${EXT_SPACE_ID}`,
+      'ROLLBACK',
+    ]);
     expect(store.markers()).toEqual({
       [APP_SPACE_ID]: { storageHash: 'old-app', profileHash: 'old-app-profile' },
       [EXT_SPACE_ID]: { storageHash: 'old-ext', profileHash: 'old-ext-profile' },
+    });
+  });
+
+  it('leaves a marker that changed after verification as it was, and signs the other spaces', async () => {
+    const store = createMarkerStore({
+      [APP_SPACE_ID]: { storageHash: 'moved-by-migrate', profileHash: 'moved-profile' },
+    });
+
+    const signatures = await store.instance.signSpaces({
+      driver,
+      spaces: [
+        { space: EXT_SPACE_ID, contract: extContract, verifiedMarker: null },
+        {
+          space: APP_SPACE_ID,
+          contract: appContract,
+          verifiedMarker: { storageHash: 'old-app', profileHash: 'old-app-profile' },
+        },
+      ],
+    });
+
+    expect(signatures).toEqual([
+      {
+        space: EXT_SPACE_ID,
+        contract: { storageHash: EXT_HASH, profileHash: 'ext-profile' },
+        marker: { created: true, updated: false },
+      },
+      {
+        space: APP_SPACE_ID,
+        contract: appHashes,
+        markerChanged: {
+          verified: { storageHash: 'old-app', profileHash: 'old-app-profile' },
+          found: { storageHash: 'moved-by-migrate', profileHash: 'moved-profile' },
+        },
+      },
+    ]);
+    expect(store.events).toEqual([
+      'BEGIN',
+      `lock ${EXT_SPACE_ID}`,
+      'lock app',
+      `insert ${EXT_SPACE_ID}`,
+      'COMMIT',
+    ]);
+    expect(store.markers()).toEqual({
+      [APP_SPACE_ID]: { storageHash: 'moved-by-migrate', profileHash: 'moved-profile' },
+      [EXT_SPACE_ID]: { storageHash: EXT_HASH, profileHash: 'ext-profile' },
+    });
+  });
+
+  it('reports a marker written after a verification that found none as changed', async () => {
+    const store = createMarkerStore({
+      [APP_SPACE_ID]: { storageHash: 'written-by-migrate', profileHash: 'migrate-profile' },
+    });
+
+    const signatures = await store.instance.signSpaces({
+      driver,
+      spaces: [{ space: APP_SPACE_ID, contract: appContract, verifiedMarker: null }],
+    });
+
+    expect(signatures).toEqual([
+      {
+        space: APP_SPACE_ID,
+        contract: appHashes,
+        markerChanged: {
+          verified: null,
+          found: { storageHash: 'written-by-migrate', profileHash: 'migrate-profile' },
+        },
+      },
+    ]);
+    expect(store.markers()).toEqual({
+      [APP_SPACE_ID]: { storageHash: 'written-by-migrate', profileHash: 'migrate-profile' },
     });
   });
 

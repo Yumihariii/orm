@@ -1,4 +1,4 @@
-import type { ContractMarkerRecord, LedgerEntryRecord } from '@internal/contract/types';
+import type { Contract, ContractMarkerRecord, LedgerEntryRecord } from '@internal/contract/types';
 import type { ControlAdapterInstance, ControlStack } from '@internal/framework-components/control';
 import type { SqlControlDriverInstance } from '@internal/sql-contract/types';
 import type {
@@ -163,6 +163,15 @@ export interface SqlControlAdapter<TTarget extends string = string>
    * Runs `fn` in one transaction on `driver`: `BEGIN`, then `COMMIT` when `fn` resolves, or `ROLLBACK` and the error rethrown when it throws.
    */
   withTransaction<T>(driver: SqlControlDriverInstance<TTarget>, fn: () => Promise<T>): Promise<T>;
+
+  /**
+   * Inside a transaction `withTransaction` opened, takes the lock the migration runner holds while it applies `contract` to `space`, and holds it until the transaction ends. A target whose `withTransaction` already takes a lock that excludes the runner does nothing here.
+   */
+  lockMarker(
+    driver: SqlControlDriverInstance<TTarget>,
+    space: string,
+    contract: Contract,
+  ): Promise<void>;
 
   /**
    * Introspects a database schema and returns the target's schema-IR node.

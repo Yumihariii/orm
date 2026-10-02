@@ -22,6 +22,7 @@ import { engineDiagnosticCodes, planMigrationAndSelfEmit } from './utils/journey
 
 const OLD_APP_HASH = `0ld0a99${'1'.repeat(57)}`;
 const OLD_EXT_HASH = `0ld0e77${'2'.repeat(57)}`;
+const MOVED_APP_HASH = `m0ved0a${'3'.repeat(57)}`;
 const JOURNEY_TIMEOUT = timeouts.spinUpPpgDev + timeouts.typeScriptCompilation;
 const PGVECTOR_SPACE_ID = 'pgvector';
 const PGVECTOR_INVARIANT_ID = 'pgvector:install-vector-v1';
@@ -299,6 +300,141 @@ withTempDir(({ createTempDir }) => {
             [TEST_SPACE_ID]: extHash,
           });
           await expectProjectWorksAgainstDatabase(project);
+        } finally {
+          db.close();
+        }
+      },
+      JOURNEY_TIMEOUT,
+    );
+  });
+
+  describe('db sign when another process changes a marker while it runs', () => {
+    function writeRace(project: Project, sql: string): void {
+      writeFileSync(
+        join(project.testDir, 'race.json'),
+        JSON.stringify({ sql, params: [MOVED_APP_HASH] }),
+      );
+    }
+
+    function expectAppMarkerChanged(sign: Awaited<ReturnType<typeof runOnEngine>>) {
+      expect(sign.presented?.diagnostics).toEqual([
+        expect.objectContaining({
+          code: 'MIGRATION.MARKER_CAS_FAILURE',
+          severity: 'error',
+          summary: 'Marker of space "app" changed while db sign ran',
+          meta: {
+            space: 'app',
+            verifiedStorageHash: OLD_APP_HASH,
+            foundStorageHash: MOVED_APP_HASH,
+          },
+        }),
+      ]);
+    }
+
+    it(
+      'leaves the marker it did not verify on PGlite, signs the other space and exits 4',
+      async () => {
+        await withDevDatabase(async ({ connectionString }) => {
+          const project = setupTestDirectoryFromFixtures(
+            createTempDir,
+            'db-sign-spaces',
+            'prisma.config.racing.with-db.ts',
+            { '{{DB_URL}}': connectionString },
+          );
+          const { appHash, extHash } = await prepareProject(project, testContractSpaceExtension);
+          await createPostgresTables(connectionString);
+          const first = await runOnEngine(project, ['db', 'sign', '--json']);
+          expect(first.exitCode, `first sign: ${first.stderr}`).toBe(0);
+          await ageMarkersOnPostgres(connectionString, {
+            id: TEST_SPACE_ID,
+            invariant: TEST_BASELINE_INVARIANT_ID,
+          });
+          writeRace(
+            project,
+            `UPDATE prisma_contract.marker SET core_hash = $1 WHERE space = 'app'`,
+          );
+
+          const sign = await runOnEngine(project, ['db', 'sign', '--json']);
+
+          expect(sign.exitCode, `db sign: ${sign.stderr}`).toBe(4);
+          expect(signedSpaces(sign)).toEqual([
+            { space: 'app', status: 'changed', storageHash: appHash, previous: undefined },
+            {
+              space: TEST_SPACE_ID,
+              status: 'signed',
+              storageHash: extHash,
+              previous: OLD_EXT_HASH,
+            },
+          ]);
+          expectAppMarkerChanged(sign);
+          expect(await postgresMarkers(connectionString)).toEqual({
+            app: MOVED_APP_HASH,
+            [TEST_SPACE_ID]: extHash,
+          });
+        });
+      },
+      JOURNEY_TIMEOUT,
+    );
+
+    it(
+      'leaves the marker it did not verify on SQLite, signs the other space and exits 4',
+      async () => {
+        const project = setupTestDirectoryFromFixtures(
+          createTempDir,
+          'db-sign-spaces-sqlite',
+          'prisma.config.racing.with-db.ts',
+        );
+        const dbPath = join(project.testDir, 'app.db');
+        writeFileSync(
+          project.configPath,
+          readFileSync(project.configPath, 'utf-8').replace('{{DB_PATH}}', dbPath),
+        );
+        copyFileSync(
+          join(
+            __dirname,
+            'fixtures/cli/cli-e2e-test-app/fixtures/db-sign-spaces-sqlite/contract.prisma',
+          ),
+          join(project.testDir, 'contract.prisma'),
+        );
+        const { appHash, extHash } = await prepareProject(project, testSqliteSpaceExtension);
+        const db = new DatabaseSync(dbPath);
+        try {
+          db.exec('CREATE TABLE "user" (id integer NOT NULL PRIMARY KEY, email text NOT NULL)');
+          db.exec('CREATE TABLE test_box (x integer NOT NULL, y integer NOT NULL)');
+          const first = await runOnEngine(project, ['db', 'sign', '--json']);
+          expect(first.exitCode, `first sign: ${first.stderr}`).toBe(0);
+          db.prepare(`UPDATE _prisma_marker SET core_hash = ? WHERE space = 'app'`).run(
+            OLD_APP_HASH,
+          );
+          db.prepare('UPDATE _prisma_marker SET core_hash = ?, invariants = ? WHERE space = ?').run(
+            OLD_EXT_HASH,
+            JSON.stringify([TEST_BASELINE_INVARIANT_ID]),
+            TEST_SPACE_ID,
+          );
+          writeRace(project, `UPDATE _prisma_marker SET core_hash = ? WHERE space = 'app'`);
+
+          const sign = await runOnEngine(project, ['db', 'sign', '--json']);
+
+          expect(sign.exitCode, `db sign: ${sign.stderr}`).toBe(4);
+          expect(signedSpaces(sign)).toEqual([
+            { space: 'app', status: 'changed', storageHash: appHash, previous: undefined },
+            {
+              space: TEST_SPACE_ID,
+              status: 'signed',
+              storageHash: extHash,
+              previous: OLD_EXT_HASH,
+            },
+          ]);
+          expectAppMarkerChanged(sign);
+          const markers = db
+            .prepare('SELECT space, core_hash FROM _prisma_marker ORDER BY space')
+            .all();
+          expect(
+            Object.fromEntries(markers.map((row) => [row['space'], row['core_hash']])),
+          ).toEqual({
+            app: MOVED_APP_HASH,
+            [TEST_SPACE_ID]: extHash,
+          });
         } finally {
           db.close();
         }

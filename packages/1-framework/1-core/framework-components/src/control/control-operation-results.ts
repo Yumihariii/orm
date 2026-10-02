@@ -104,25 +104,48 @@ export interface IntrospectSchemaResult<TSchemaIR> {
   };
 }
 
+/** The two hashes a contract marker holds. */
+export interface MarkerHashes {
+  readonly storageHash: string;
+  readonly profileHash: string;
+}
+
+/** Whether two markers hold the same hashes, `null` standing for no marker. */
+export function sameMarkerHashes(a: MarkerHashes | null, b: MarkerHashes | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.storageHash === b.storageHash && a.profileHash === b.profileHash;
+}
+
 /** A contract space whose marker is to be written with its contract's hashes. */
 export interface SpaceToSign {
   readonly space: string;
   readonly contract: Contract;
+  /**
+   * The space's marker as the caller read it before verifying the space, or `null` when it had none. The marker is written only while it still holds these hashes.
+   */
+  readonly verifiedMarker: MarkerHashes | null;
 }
 
-/** What signing did to one contract space's marker. */
-export interface SpaceSignature {
+/** A space whose marker now holds its contract's hashes. */
+export interface SpaceSigned {
   readonly space: string;
-  readonly contract: {
-    readonly storageHash: string;
-    readonly profileHash: string;
-  };
+  readonly contract: MarkerHashes;
   readonly marker: {
     readonly created: boolean;
     readonly updated: boolean;
-    readonly previous?: {
-      readonly storageHash: string;
-      readonly profileHash: string;
-    };
+    readonly previous?: MarkerHashes;
   };
 }
+
+/** A space whose marker changed after the caller verified the space. Its marker was left as it was. */
+export interface SpaceMarkerChanged {
+  readonly space: string;
+  readonly contract: MarkerHashes;
+  readonly markerChanged: {
+    readonly verified: MarkerHashes | null;
+    readonly found: MarkerHashes | null;
+  };
+}
+
+/** What signing did to one contract space's marker. */
+export type SpaceSignature = SpaceSigned | SpaceMarkerChanged;

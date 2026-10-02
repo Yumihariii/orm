@@ -104,7 +104,7 @@ describe('family instance signSpaces', () => {
 
           const signatures = await familyInstance.signSpaces({
             driver,
-            spaces: [{ space: APP_SPACE_ID, contract: validatedContract }],
+            spaces: [{ space: APP_SPACE_ID, contract: validatedContract, verifiedMarker: null }],
           });
 
           expect(signatures).toEqual([
@@ -186,7 +186,13 @@ describe('family instance signSpaces', () => {
 
           const signatures = await familyInstance.signSpaces({
             driver,
-            spaces: [{ space: APP_SPACE_ID, contract: validatedContract }],
+            spaces: [
+              {
+                space: APP_SPACE_ID,
+                contract: validatedContract,
+                verifiedMarker: { storageHash: 'old-hash', profileHash: 'old-profile-hash' },
+              },
+            ],
           });
 
           expect(signatures).toEqual([
@@ -249,7 +255,13 @@ describe('family instance signSpaces', () => {
 
           await familyInstance.signSpaces({
             driver,
-            spaces: [{ space: APP_SPACE_ID, contract: validatedContract }],
+            spaces: [
+              {
+                space: APP_SPACE_ID,
+                contract: validatedContract,
+                verifiedMarker: { storageHash: 'old-hash', profileHash: 'old-profile-hash' },
+              },
+            ],
           });
 
           const marker = await familyInstance.readMarker({ driver, space: APP_SPACE_ID });
@@ -310,16 +322,30 @@ describe('family instance signSpaces', () => {
             }),
           );
 
-          const spaces = [{ space: APP_SPACE_ID, contract: validatedContract }];
-          const [first] = await familyInstance.signSpaces({ driver, spaces });
-          expect(first?.marker).toEqual({ created: true, updated: false });
+          const [first] = await familyInstance.signSpaces({
+            driver,
+            spaces: [{ space: APP_SPACE_ID, contract: validatedContract, verifiedMarker: null }],
+          });
+          expect(first).toMatchObject({ marker: { created: true, updated: false } });
 
           // Get the marker's updated_at timestamp
           const markerAfterFirst = await familyInstance.readMarker({ driver, space: APP_SPACE_ID });
           const firstUpdatedAt = markerAfterFirst?.updatedAt;
 
-          const [second] = await familyInstance.signSpaces({ driver, spaces });
-          expect(second?.marker).toEqual({ created: false, updated: false });
+          const [second] = await familyInstance.signSpaces({
+            driver,
+            spaces: [
+              {
+                space: APP_SPACE_ID,
+                contract: validatedContract,
+                verifiedMarker: {
+                  storageHash: validatedContract.storage.storageHash,
+                  profileHash: validatedContract.profileHash,
+                },
+              },
+            ],
+          });
+          expect(second).toMatchObject({ marker: { created: false, updated: false } });
 
           // Verify marker was not updated (updated_at should be the same)
           const markerAfterSecond = await familyInstance.readMarker({

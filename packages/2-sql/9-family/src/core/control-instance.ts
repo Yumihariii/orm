@@ -24,6 +24,7 @@ import type {
 import {
   APP_SPACE_ID,
   SchemaTreeNode,
+  sameMarkerHashes,
   VERIFY_CODE_HASH_MISMATCH,
   VERIFY_CODE_MARKER_MISSING,
   VERIFY_CODE_TARGET_MISMATCH,
@@ -587,7 +588,7 @@ export function createSqlFamilyInstance<TTargetId extends string>(
   const signSpaceMarker = async (
     controlAdapter: SqlControlAdapter<string>,
     driver: SqlControlDriverInstance<string>,
-    { space, contract }: SpaceToSign,
+    { space, contract, verifiedMarker }: SpaceToSign,
   ): Promise<SpaceSignature> => {
     const storageHash = contract.storage.storageHash;
     const profileHash =
@@ -597,6 +598,13 @@ export function createSqlFamilyInstance<TTargetId extends string>(
     const signed = { space, contract: { storageHash, profileHash } };
 
     const existing = await controlAdapter.readMarker(driver, space);
+    const found =
+      existing === null
+        ? null
+        : { storageHash: existing.storageHash, profileHash: existing.profileHash };
+    if (!sameMarkerHashes(found, verifiedMarker)) {
+      return { ...signed, markerChanged: { verified: verifiedMarker, found } };
+    }
     if (existing === null) {
       await controlAdapter.insertMarker(driver, space, { storageHash, profileHash });
       return { ...signed, marker: { created: true, updated: false } };
@@ -639,6 +647,9 @@ export function createSqlFamilyInstance<TTargetId extends string>(
     }
     const controlAdapter = getControlAdapter();
     return controlAdapter.withTransaction(driver, async () => {
+      for (const { space, contract } of spaces) {
+        await controlAdapter.lockMarker(driver, space, contract);
+      }
       for (const query of controlAdapter.bootstrapSignMarkerQueries()) {
         const lowered = await controlAdapter.lowerToExecuteRequest(query, {
           contract: first.contract,

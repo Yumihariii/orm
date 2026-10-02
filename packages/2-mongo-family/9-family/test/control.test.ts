@@ -151,7 +151,13 @@ describe('createMongoFamilyInstance', () => {
     try {
       await instance.signSpaces({
         driver,
-        spaces: [{ space: 'app', contract: instance.deserializeContract(mongoContractJson({})) }],
+        spaces: [
+          {
+            space: 'app',
+            contract: instance.deserializeContract(mongoContractJson({})),
+            verifiedMarker: { storageHash: 'stale', profileHash: 'stale' },
+          },
+        ],
       });
       expect.fail('expected throw');
     } catch (e) {
@@ -188,16 +194,62 @@ describe('createMongoFamilyInstance', () => {
     const signatures = await instance.signSpaces({
       driver,
       spaces: [
-        { space: 'app', contract },
-        { space: 'audit', contract },
+        { space: 'app', contract, verifiedMarker: null },
+        { space: 'audit', contract, verifiedMarker: { storageHash: 'old', profileHash: 'old' } },
       ],
     });
 
-    expect(signatures.map((s) => [s.space, s.marker.created, s.marker.updated])).toEqual([
-      ['app', true, false],
-      ['audit', false, true],
+    expect(signatures.map((s) => ['marker' in s ? s.marker : s.markerChanged, s.space])).toEqual([
+      [{ created: true, updated: false }, 'app'],
+      [
+        { created: false, updated: true, previous: { storageHash: 'old', profileHash: 'old' } },
+        'audit',
+      ],
     ]);
     expect(writes).toEqual(['init app', 'update audit']);
+  });
+
+  it('signSpaces() leaves a marker that changed after verification as it was', async () => {
+    const writes: string[] = [];
+    const adapter = {
+      readMarker: async () => ({ storageHash: 'moved', profileHash: 'moved-profile' }),
+      initMarker: async (_driver: unknown, space: string) => {
+        writes.push(`init ${space}`);
+      },
+      updateMarker: async (_driver: unknown, space: string) => {
+        writes.push(`update ${space}`);
+        return true;
+      },
+    } as unknown as MongoControlAdapter<'mongo'>;
+    const instance = createMongoFamilyInstance(
+      createControlStack({
+        family: mongoFamilyDescriptor,
+        target: stubMongoTargetDescriptor,
+        adapter: stubAdapterDescriptor(adapter),
+      }),
+    );
+    const contract = instance.deserializeContract(mongoContractJson({}));
+    const driver = { targetId: 'mongo' } as Parameters<typeof instance.signSpaces>[0]['driver'];
+
+    const signatures = await instance.signSpaces({
+      driver,
+      spaces: [{ space: 'app', contract, verifiedMarker: null }],
+    });
+
+    expect(signatures).toEqual([
+      {
+        space: 'app',
+        contract: {
+          storageHash: contract.storage.storageHash,
+          profileHash: contract.profileHash,
+        },
+        markerChanged: {
+          verified: null,
+          found: { storageHash: 'moved', profileHash: 'moved-profile' },
+        },
+      },
+    ]);
+    expect(writes).toEqual([]);
   });
 
   it('createRunnerDependencies() returns the dependencies the adapter builds for the driver', () => {

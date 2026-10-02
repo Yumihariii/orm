@@ -1,19 +1,24 @@
 import { createPostgresBuiltinCodecLookup } from '@internal/target-postgres/codecs';
 import { createPostgresBuiltinDataTypeLookup } from '@internal/target-postgres/data-types';
+import { markerLockKey } from '@internal/target-postgres/marker-lock';
+import { createContract } from '@repo/test-utils';
 import { describe, expect, it } from 'vitest';
 import { PostgresControlAdapter } from '../src/core/control-adapter';
 
 function createCapturingDriver() {
   const statements: string[] = [];
+  const calls: { readonly sql: string; readonly params: readonly unknown[] | undefined }[] = [];
   return {
     familyId: 'sql' as const,
     targetId: 'postgres' as const,
-    async query<Row = Record<string, unknown>>(sql: string) {
+    async query<Row = Record<string, unknown>>(sql: string, params?: readonly unknown[]) {
       statements.push(sql);
+      calls.push({ sql, params });
       return { rows: [] as Row[] };
     },
     async close() {},
     statements,
+    calls,
   };
 }
 
@@ -83,5 +88,26 @@ describe('PostgresControlAdapter.withTransaction', () => {
       ).rejects.toBe(failure);
       expect(failure.cause).toBe(original);
     });
+  });
+});
+
+describe('PostgresControlAdapter.lockMarker', () => {
+  const adapter = new PostgresControlAdapter(
+    createPostgresBuiltinCodecLookup(),
+    createPostgresBuiltinDataTypeLookup(),
+  );
+
+  it('takes the advisory lock the migration runner takes for the space', async () => {
+    const driver = createCapturingDriver();
+    const contract = createContract();
+
+    await adapter.lockMarker(driver, 'app', contract);
+
+    expect(driver.calls).toEqual([
+      {
+        sql: 'select pg_advisory_xact_lock(hashtext($1))',
+        params: [markerLockKey(contract, 'app')],
+      },
+    ]);
   });
 });

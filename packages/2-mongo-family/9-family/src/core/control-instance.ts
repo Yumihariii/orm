@@ -16,6 +16,7 @@ import type {
 } from '@internal/framework-components/control';
 import {
   APP_SPACE_ID,
+  sameMarkerHashes,
   VERIFY_CODE_HASH_MISMATCH,
   VERIFY_CODE_MARKER_MISSING,
   VERIFY_CODE_TARGET_MISMATCH,
@@ -209,7 +210,7 @@ export function createMongoFamilyInstance(controlStack: ControlStack): MongoCont
 
   async function signSpaceMarker(
     driver: ControlDriverInstance<'mongo', 'mongo'>,
-    { space, contract }: SpaceToSign,
+    { space, contract, verifiedMarker }: SpaceToSign,
   ): Promise<SpaceSignature> {
     const storageHash = contract.storage.storageHash;
     const profileHash = contract.profileHash;
@@ -217,6 +218,13 @@ export function createMongoFamilyInstance(controlStack: ControlStack): MongoCont
     const controlAdapter = getControlAdapter();
 
     const existing = await controlAdapter.readMarker(driver, space);
+    const found =
+      existing === null
+        ? null
+        : { storageHash: existing.storageHash, profileHash: existing.profileHash };
+    if (!sameMarkerHashes(found, verifiedMarker)) {
+      return { ...signed, markerChanged: { verified: verifiedMarker, found } };
+    }
     if (existing === null) {
       await controlAdapter.initMarker(driver, space, { storageHash, profileHash });
       return { ...signed, marker: { created: true, updated: false } };

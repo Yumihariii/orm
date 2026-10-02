@@ -64,6 +64,7 @@ function createMockComponents() {
     introspect: async () => ({ tables: [] }),
     deserializeContract: (ir: unknown) => ir as Contract,
     readMarker: async () => null,
+    readAllMarkers: async () => new Map(),
     readLedger: async () => [],
     verify: async (): Promise<VerifyDatabaseResult> => ({
       ok: true,

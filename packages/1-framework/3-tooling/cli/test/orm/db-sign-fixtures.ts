@@ -22,6 +22,7 @@ export const HASH_A = `4cb4256${'0'.repeat(57)}`;
 export const HASH_PREVIOUS = `9d0f118${'2'.repeat(57)}`;
 export const HASH_EXT = `e7a0c3d${'3'.repeat(57)}`;
 export const PROFILE_HASH = `7b11e2c${'4'.repeat(57)}`;
+export const HASH_MOVED = `5a6b7c8${'5'.repeat(57)}`;
 export const CONNECTION = 'postgres://user:secret@localhost:5432/appdb';
 export const MASKED_CONNECTION = 'postgres://****:****@localhost:5432/appdb';
 export const EMITTED_CONTRACT_DTS = 'export type Contract = unknown;\n';
@@ -164,6 +165,18 @@ export function signedSpace(space: string, storageHash: string): DbSignSpaceOutc
       created: false,
       updated: true,
       previous: { storageHash: HASH_PREVIOUS, profileHash: PROFILE_HASH },
+    },
+  };
+}
+
+export function changedSpace(space: string, storageHash: string): DbSignSpaceOutcome {
+  return {
+    space,
+    status: 'changed',
+    contract: { storageHash, profileHash: PROFILE_HASH },
+    markerChanged: {
+      verified: { storageHash: HASH_PREVIOUS, profileHash: PROFILE_HASH },
+      found: { storageHash: HASH_MOVED, profileHash: PROFILE_HASH },
     },
   };
 }

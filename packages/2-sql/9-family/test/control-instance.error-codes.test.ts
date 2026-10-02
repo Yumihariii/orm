@@ -42,6 +42,7 @@ describe('sql family instance structured error codes', () => {
       targetId: 'postgres',
       bootstrapSignMarkerQueries: () => [],
       withTransaction: (_driver: unknown, fn: () => Promise<unknown>) => fn(),
+      lockMarker: async () => {},
       readMarker: async () => ({
         storageHash: 'stale-hash',
         profileHash: 'stale-profile',
@@ -55,7 +56,16 @@ describe('sql family instance structured error codes', () => {
 
     const driver = {} as SqlControlDriverInstance<string>;
     const error = await instance
-      .signSpaces({ driver, spaces: [{ space: APP_SPACE_ID, contract: buildContract() }] })
+      .signSpaces({
+        driver,
+        spaces: [
+          {
+            space: APP_SPACE_ID,
+            contract: buildContract(),
+            verifiedMarker: { storageHash: 'stale-hash', profileHash: 'stale-profile' },
+          },
+        ],
+      })
       .then(() => {
         throw new Error('expected signSpaces() to reject');
       })

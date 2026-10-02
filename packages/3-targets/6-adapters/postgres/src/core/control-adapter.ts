@@ -1,6 +1,7 @@
 import type {
   ColumnDefault,
   ColumnDefaultLiteralInputValue,
+  Contract,
   ContractMarkerRecord,
   LedgerEntryRecord,
 } from '@internal/contract/types';
@@ -84,6 +85,7 @@ import type {
 } from '@internal/target-postgres/ddl';
 import { parsePostgresDefault } from '@internal/target-postgres/default-normalizer';
 import { postgresError } from '@internal/target-postgres/errors';
+import { MARKER_LOCK_SQL, markerLockKey } from '@internal/target-postgres/marker-lock';
 import { introspectedNativeType } from '@internal/target-postgres/native-type-normalizer';
 import {
   isPostgresDateTimeDataType,
@@ -541,6 +543,14 @@ export class PostgresControlAdapter implements SqlControlAdapter<'postgres'> {
     }
     await driver.query('COMMIT');
     return result;
+  }
+
+  async lockMarker(
+    driver: SqlControlDriverInstance<'postgres'>,
+    space: string,
+    contract: Contract,
+  ): Promise<void> {
+    await driver.query(MARKER_LOCK_SQL, [markerLockKey(contract, space)]);
   }
 
   /**

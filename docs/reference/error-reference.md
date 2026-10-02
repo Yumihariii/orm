@@ -1500,7 +1500,7 @@ The database's marker table (`prisma_contract.marker` on Postgres, `_prisma_mark
 
 ### MIGRATION.MARKER_CAS_FAILURE
 
-While finalizing an apply, the compare-and-swap update of the database's contract marker found the marker had been modified by another process mid-migration: a concurrent migration raced this one. Payload: `space`, `expectedStorageHash`, `destinationStorageHash`.
+While finalizing an apply, the compare-and-swap update of the database's contract marker found the marker had been modified by another process mid-migration: a concurrent migration raced this one. Payload: `space`, `expectedStorageHash`, `destinationStorageHash`. `db sign` reports the same code as a diagnostic, one per space, when a space's marker changed between the moment `db sign` read it and the moment it came to write it; that space is not signed and the command exits with code 4. Run `db sign` again once the other process has finished. Payload: `space`, `verifiedStorageHash`, `foundStorageHash`.
 
 ### MIGRATION.MARKER_MISMATCH
 

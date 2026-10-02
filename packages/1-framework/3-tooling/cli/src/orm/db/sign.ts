@@ -148,7 +148,26 @@ function spaceNode(outcome: DbSignSpaceOutcome): TreeNode {
         status: 'error',
         children: issueNodes(outcome.schema.schema.issues, 'error'),
       };
+    case 'changed':
+      return {
+        label: `${outcome.space}: not signed, its marker changed after the schema was verified`,
+        status: 'error',
+        children: [
+          {
+            label: `marker when verified: ${outcome.markerChanged.verified?.storageHash ?? 'none'}`,
+            status: 'error',
+          },
+          {
+            label: `marker now: ${outcome.markerChanged.found?.storageHash ?? 'none'}`,
+            status: 'error',
+          },
+        ],
+      };
   }
+}
+
+function isSigned(outcome: DbSignSpaceOutcome): boolean {
+  return outcome.status === 'signed' || outcome.status === 'unchanged';
 }
 
 function quotedList(spaces: readonly DbSignSpaceOutcome[]): string {
@@ -157,13 +176,49 @@ function quotedList(spaces: readonly DbSignSpaceOutcome[]): string {
 
 function signSummary(spaces: readonly DbSignSpaceOutcome[]): string {
   const failed = spaces.filter((outcome) => outcome.status === 'failed');
-  if (failed.length === 0) {
+  const changed = spaces.filter((outcome) => outcome.status === 'changed');
+  if (failed.length === 0 && changed.length === 0) {
     return 'Database signed';
   }
-  const signed = spaces.filter((outcome) => outcome.status !== 'failed');
-  const noun = failed.length === 1 ? 'space' : 'spaces';
+  const signed = spaces.filter(isSigned);
+  const problems = [
+    ...(failed.length === 0
+      ? []
+      : [
+          `Database schema does not satisfy contract for ${failed.length === 1 ? 'space' : 'spaces'} ${quotedList(failed)}`,
+        ]),
+    ...(changed.length === 0
+      ? []
+      : [
+          `${changed.length === 1 ? 'marker of space' : 'markers of spaces'} ${quotedList(changed)} changed while db sign ran`,
+        ]),
+  ].join('; ');
   const signedText = signed.length === 0 ? 'signed nothing' : `signed ${quotedList(signed)}`;
-  return `Database schema does not satisfy contract for ${noun} ${quotedList(failed)}; ${signedText}`;
+  return `${problems.charAt(0).toUpperCase()}${problems.slice(1)}; ${signedText}`;
+}
+
+function markerChangedDiagnostic(
+  outcome: Extract<DbSignSpaceOutcome, { readonly status: 'changed' }>,
+): Diagnostic {
+  const { verified, found } = outcome.markerChanged;
+  return {
+    code: 'MIGRATION.MARKER_CAS_FAILURE',
+    severity: 'error',
+    summary: `Marker of space "${outcome.space}" changed while db sign ran`,
+    why: `Another process, such as migrate, changed the marker from ${verified?.storageHash ?? 'no marker'} to ${found?.storageHash ?? 'no marker'} after db sign read it, so db sign did not sign the space.`,
+    nextActions: [
+      {
+        kind: 'run-command',
+        label: 'Sign again once the other process has finished',
+        command: '{bin} db sign',
+      },
+    ],
+    meta: {
+      space: outcome.space,
+      verifiedStorageHash: verified?.storageHash ?? null,
+      foundStorageHash: found?.storageHash ?? null,
+    },
+  };
 }
 
 function advancedRefSpans(
@@ -268,7 +323,8 @@ export function createDbSignCommand(
         'which is what a CI or deployment pipeline usually wants.\n' +
         'Exit codes: 0 = signed, 2 = the command could not run (unresolvable\n' +
         'contract reference, no emitted contract, unreachable database),\n' +
-        '4 = schema verification failed for a space, whose signature was not written.',
+        '4 = schema verification failed for a space,\n' +
+        'or its marker changed while db sign ran; its signature was not written.',
       examples: [
         'db sign',
         'db sign --db $DATABASE_URL',
@@ -302,7 +358,9 @@ export function createDbSignCommand(
       },
     },
     needs: { config: ormConfigSection },
-    exitCodes: { 4: 'schema verification failed for a space; its signature was not written' },
+    exitCodes: {
+      4: 'schema verification failed for a space, or its marker changed while db sign ran; its signature was not written',
+    },
     handler: async (args, ctx) => {
       const positionalContract = args.positionals.contract;
       const flagContract = args.flags.contract;
@@ -416,7 +474,7 @@ export function createDbSignCommand(
         const advanced: (AdvancedRef & { readonly previousHash: string | undefined })[] = [];
         if (advancement !== null) {
           for (const outcome of spaces) {
-            if (outcome.status === 'failed') continue;
+            if (!isSigned(outcome)) continue;
             const hash = outcome.contract.storageHash;
             const isApp = outcome.space === APP_SPACE_ID;
             const refsDir = isApp
@@ -444,16 +502,17 @@ export function createDbSignCommand(
           }
         }
 
-        const failed = spaces.filter((outcome) => outcome.status === 'failed');
+        const unsigned = spaces.filter((outcome) => !isSigned(outcome));
         const document: DbSignDocument = {
-          ok: failed.length === 0,
+          ok: unsigned.length === 0,
           summary: signSummary(spaces),
           spaces,
           advancedRefs: advanced.map(({ space, name, hash }) => ({ space, name, hash })),
         };
-        const diagnostics: Diagnostic[] = failed.flatMap((outcome) =>
-          outcome.status === 'failed'
-            ? [
+        const diagnostics: Diagnostic[] = spaces.flatMap((outcome) => {
+          switch (outcome.status) {
+            case 'failed':
+              return [
                 schemaVerdictDiagnostic({
                   result: outcome.schema,
                   space: outcome.space,
@@ -463,14 +522,18 @@ export function createDbSignCommand(
                     issues: outcome.schema.schema.issues,
                   }),
                 }),
-              ]
-            : [],
-        );
+              ];
+            case 'changed':
+              return [markerChangedDiagnostic(outcome)];
+            default:
+              return [];
+          }
+        });
         return ok(
           ctx.present(
             {
               data: document,
-              exitCode: failed.length === 0 ? 0 : FINDINGS_EXIT_CODE,
+              exitCode: unsigned.length === 0 ? 0 : FINDINGS_EXIT_CODE,
               ...(diagnostics.length === 0 ? {} : { diagnostics }),
             },
             signPresentations({
