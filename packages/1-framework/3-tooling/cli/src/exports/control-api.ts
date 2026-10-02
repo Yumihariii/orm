@@ -11,7 +11,6 @@
 // Re-export core control plane types for consumer convenience
 export type {
   ControlStack,
-  SignDatabaseResult,
   VerifyDatabaseResult,
   VerifyDatabaseSchemaResult,
 } from '@internal/framework-components/control';
@@ -170,7 +169,6 @@ export type {
   IntrospectOptions,
   OnControlProgress,
   SchemaVerifyOptions,
-  SignOptions,
   VerifyOptions,
 } from '../control-api/types';
 // Lifecycle helpers for hosts that publish to many output paths

@@ -126,31 +126,3 @@ export interface SpaceSignature {
     };
   };
 }
-
-export interface SignDatabaseResult {
-  readonly ok: boolean;
-  readonly summary: string;
-  readonly contract: {
-    readonly storageHash: string;
-    readonly profileHash?: string;
-  };
-  readonly target: {
-    readonly expected: string;
-    readonly actual?: string;
-  };
-  readonly marker: {
-    readonly created: boolean;
-    readonly updated: boolean;
-    readonly previous?: {
-      readonly storageHash?: string;
-      readonly profileHash?: string;
-    };
-  };
-  readonly meta?: {
-    readonly configPath?: string;
-    readonly contractPath: string;
-  };
-  readonly timings: {
-    readonly total: number;
-  };
-}

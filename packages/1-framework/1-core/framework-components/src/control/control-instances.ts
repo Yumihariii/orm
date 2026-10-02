@@ -8,7 +8,6 @@ import type {
   TargetInstance,
 } from '../shared/framework-components';
 import type {
-  SignDatabaseResult,
   SpaceSignature,
   SpaceToSign,
   VerifyDatabaseResult,
@@ -53,15 +52,8 @@ export interface ControlFamilyInstance<TFamilyId extends string, TSchemaIR>
     readonly frameworkComponents: ReadonlyArray<TargetBoundComponentDescriptor<TFamilyId, string>>;
   }): VerifyDatabaseSchemaResult;
 
-  sign(options: {
-    readonly driver: ControlDriverInstance<TFamilyId, string>;
-    readonly contract: unknown;
-    readonly contractPath: string;
-    readonly configPath?: string;
-  }): Promise<SignDatabaseResult>;
-
   /**
-   * Writes the marker of every space in `spaces` with its contract's hashes. Does not check the schema: callers verify each space first. A family whose database has transactions writes every marker in one, so a failed write leaves every marker as it was.
+   * Writes the marker of every space in `spaces` with its contract's hashes. Does not check the schema: callers verify each space first. The SQL family writes every marker in one transaction, so a failed write leaves every marker as it was. The Mongo family writes the markers one by one, so a failed write can leave earlier markers written; running the command again finishes the job.
    */
   signSpaces(options: {
     readonly driver: ControlDriverInstance<TFamilyId, string>;

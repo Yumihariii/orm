@@ -5,7 +5,6 @@ import type {
   CoreSchemaView,
   MigrationPlanOperation,
   OperationPreview,
-  SignDatabaseResult,
   VerifyDatabaseResult,
   VerifyDatabaseSchemaResult,
 } from '@internal/framework-components/control';
@@ -29,7 +28,6 @@ import type {
   MigrateOptions,
   MigrateResult,
   SchemaVerifyOptions,
-  SignOptions,
   VerifyOptions,
 } from '../types';
 
@@ -55,7 +53,6 @@ export const FIXTURE_FAMILY_ID = 'fixture-family';
 export interface ControlClientFixtures {
   readonly verify: VerifyDatabaseResult;
   readonly schemaVerify: VerifyDatabaseSchemaResult;
-  readonly sign: SignDatabaseResult;
   readonly dbInit: DbInitResult;
   readonly dbUpdate: DbUpdateResult;
   readonly dbVerify: ExecuteDbVerifyResult;
@@ -152,14 +149,6 @@ export function defaultControlClientFixtures(): ControlClientFixtures {
       timings: { total: 5 },
     },
     schemaVerify,
-    sign: {
-      ok: true,
-      summary: 'Signature written',
-      contract,
-      target,
-      marker: { created: true, updated: false },
-      timings: { total: 5 },
-    },
     dbInit: ok(applySuccess),
     dbUpdate: ok(applySuccess),
     dbVerify: ok({
@@ -299,10 +288,6 @@ class FixtureControlClientImpl implements FixtureControlClient {
 
   async schemaVerify(options: SchemaVerifyOptions): Promise<VerifyDatabaseSchemaResult> {
     return this.recordConnected('schemaVerify', options, this.fixtures.schemaVerify);
-  }
-
-  async sign(options: SignOptions): Promise<SignDatabaseResult> {
-    return this.recordConnected('sign', options, this.fixtures.sign);
   }
 
   async dbInit(options: DbInitOptions): Promise<DbInitResult> {

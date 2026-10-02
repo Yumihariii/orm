@@ -16,7 +16,6 @@ import type {
   MigrationPlannerConflict,
   MigrationPlanOperation,
   OperationPreview,
-  SignDatabaseResult,
   VerifyDatabaseResult,
   VerifyDatabaseSchemaResult,
 } from '@internal/framework-components/control';
@@ -82,7 +81,6 @@ export type ControlActionName =
   | 'migrate'
   | 'verify'
   | 'schemaVerify'
-  | 'sign'
   | 'introspect'
   | 'emit';
 
@@ -155,30 +153,6 @@ export interface SchemaVerifyOptions {
   readonly strict?: boolean;
   /**
    * Database connection. If provided, schemaVerify will connect before executing.
-   * If omitted, the client must already be connected.
-   * The type is driver-specific (e.g., string URL for Postgres).
-   */
-  readonly connection?: unknown;
-  /** Optional progress callback for observing operation progress */
-  readonly onProgress?: OnControlProgress;
-}
-
-/**
- * Options for the sign operation.
- */
-export interface SignOptions {
-  /** Contract or unvalidated JSON - validated at runtime via familyInstance.deserializeContract() */
-  readonly contract: unknown;
-  /**
-   * Path to the contract file (for metadata in the result).
-   */
-  readonly contractPath?: string;
-  /**
-   * Path to the config file (for metadata in the result).
-   */
-  readonly configPath?: string;
-  /**
-   * Database connection. If provided, sign will connect before executing.
    * If omitted, the client must already be connected.
    * The type is driver-specific (e.g., string URL for Postgres).
    */
@@ -916,16 +890,6 @@ export interface ControlClient {
    * @throws If not connected or infrastructure failure
    */
   schemaVerify(options: SchemaVerifyOptions): Promise<VerifyDatabaseSchemaResult>;
-
-  /**
-   * Signs the database with a contract signature.
-   * Writes or updates the signature if schema verification passes.
-   * Idempotent (no-op if signature already matches).
-   *
-   * @returns Structured result
-   * @throws If not connected or infrastructure failure
-   */
-  sign(options: SignOptions): Promise<SignDatabaseResult>;
 
   /**
    * Initializes database schema from contract.

@@ -1,4 +1,4 @@
-import type { SchemaDiffIssue } from '@internal/framework-components/control';
+import { APP_SPACE_ID, type SchemaDiffIssue } from '@internal/framework-components/control';
 import type { SqlControlDriverInstance } from '@internal/sql-contract/types';
 import { isStructuredError } from '@internal/utils/structured-error';
 import { describe, expect, it } from 'vitest';
@@ -36,7 +36,7 @@ describe('sql family instance structured error codes', () => {
     });
   });
 
-  it('raises MIGRATION.MARKER_CAS_FAILURE when the marker CAS update loses the race during sign', async () => {
+  it('raises MIGRATION.MARKER_CAS_FAILURE when the marker CAS update loses the race during signSpaces', async () => {
     const adapterStub = {
       familyId: 'sql',
       targetId: 'postgres',
@@ -55,9 +55,9 @@ describe('sql family instance structured error codes', () => {
 
     const driver = {} as SqlControlDriverInstance<string>;
     const error = await instance
-      .sign({ driver, contract: buildContract(), contractPath: 'contract.json' })
+      .signSpaces({ driver, spaces: [{ space: APP_SPACE_ID, contract: buildContract() }] })
       .then(() => {
-        throw new Error('expected sign() to reject');
+        throw new Error('expected signSpaces() to reject');
       })
       .catch((err: unknown) => err);
 

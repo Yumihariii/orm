@@ -9,7 +9,6 @@ import type {
   OperationPreview,
   OperationPreviewCapable,
   SchemaViewCapable,
-  SignDatabaseResult,
   SpaceSignature,
   SpaceToSign,
   VerifyDatabaseResult,
@@ -340,43 +339,6 @@ export function createMongoFamilyInstance(controlStack: ControlStack): MongoCont
         strict: options.strict,
         frameworkComponents: options.frameworkComponents,
       });
-    },
-
-    async sign(options): Promise<SignDatabaseResult> {
-      const { driver, contract: rawContract, contractPath, configPath } = options;
-      const startTime = Date.now();
-      const contract = asValidatedMongoContract(rawContract);
-      const { marker, contract: signedHashes } = await signSpaceMarker(asMongoDriver(driver), {
-        space: APP_SPACE_ID,
-        contract,
-      });
-
-      let summary: string;
-      if (marker.created) {
-        summary = 'Database signed (marker created)';
-      } else if (marker.updated) {
-        summary = `Database signed (marker updated from ${marker.previous?.storageHash ?? 'unknown'})`;
-      } else {
-        summary = 'Database already signed with this contract';
-      }
-
-      return {
-        ok: true,
-        summary,
-        contract: signedHashes,
-        target: {
-          expected: contract.target,
-          actual: contract.target,
-        },
-        marker,
-        meta: {
-          contractPath,
-          ...ifDefined('configPath', configPath),
-        },
-        timings: {
-          total: Date.now() - startTime,
-        },
-      };
     },
 
     async signSpaces(options): Promise<readonly SpaceSignature[]> {

@@ -104,14 +104,6 @@ describe('createMongoFamilyInstance', () => {
     ).toThrow();
   });
 
-  it('sign() requires a valid contract', async () => {
-    const instance = createMongoFamilyInstance(createMinimalControlStack());
-    const fakeDriver = {} as Parameters<typeof instance.sign>[0]['driver'];
-    await expect(
-      instance.sign({ driver: fakeDriver, contract: {}, contractPath: '/test' }),
-    ).rejects.toThrow();
-  });
-
   it('introspect() requires an adapter on the control stack', async () => {
     const instance = createMongoFamilyInstance(createMinimalControlStack());
     const fakeDriver = {} as Parameters<typeof instance.introspect>[0]['driver'];
@@ -144,7 +136,7 @@ describe('createMongoFamilyInstance', () => {
     }
   });
 
-  it('sign() raises MIGRATION.MARKER_CAS_FAILURE when the marker CAS update fails', async () => {
+  it('signSpaces() raises MIGRATION.MARKER_CAS_FAILURE when the marker CAS update fails', async () => {
     const adapter = {
       readMarker: async () => ({ storageHash: 'stale', profileHash: 'stale' }),
       updateMarker: async () => false,
@@ -155,12 +147,11 @@ describe('createMongoFamilyInstance', () => {
       adapter: stubAdapterDescriptor(adapter),
     });
     const instance = createMongoFamilyInstance(stack);
-    const driver = { targetId: 'mongo' } as Parameters<typeof instance.sign>[0]['driver'];
+    const driver = { targetId: 'mongo' } as Parameters<typeof instance.signSpaces>[0]['driver'];
     try {
-      await instance.sign({
+      await instance.signSpaces({
         driver,
-        contract: mongoContractJson({}),
-        contractPath: '/test',
+        spaces: [{ space: 'app', contract: instance.deserializeContract(mongoContractJson({})) }],
       });
       expect.fail('expected throw');
     } catch (e) {

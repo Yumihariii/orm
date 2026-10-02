@@ -3,11 +3,7 @@ import postgresAdapter from '@internal/adapter-postgres/control';
 import type { Contract } from '@internal/contract/types';
 import postgresDriver from '@internal/driver-postgres/control';
 import sql from '@internal/family-sql/control';
-import {
-  APP_SPACE_ID,
-  createControlStack,
-  type SignDatabaseResult,
-} from '@internal/framework-components/control';
+import { APP_SPACE_ID, createControlStack } from '@internal/framework-components/control';
 import { defineContract, field, model } from '@internal/postgres/contract-builder';
 import type { SqlStorage } from '@internal/sql-contract/types';
 import { seedTestMarker } from '@internal/sql-runtime/test/utils';
@@ -44,7 +40,7 @@ function createTestContract(): Contract<SqlStorage> {
   };
 }
 
-describe('family instance sign', () => {
+describe('family instance signSpaces', () => {
   let database: DevDatabase | undefined;
   let connectionString: string | undefined;
 
@@ -106,24 +102,21 @@ describe('family instance sign', () => {
             }),
           );
 
-          const result = (await familyInstance.sign({
+          const signatures = await familyInstance.signSpaces({
             driver,
-            contract: validatedContract,
-            contractPath: './contract.json',
-          })) as SignDatabaseResult;
-
-          expect(result).toMatchObject({
-            ok: true,
-            summary: 'Database signed (marker created)',
-            marker: {
-              created: true,
-              updated: false,
-            },
-            contract: {
-              storageHash: validatedContract.storage.storageHash,
-            },
+            spaces: [{ space: APP_SPACE_ID, contract: validatedContract }],
           });
-          expect(result.timings.total).toBeGreaterThanOrEqual(0);
+
+          expect(signatures).toEqual([
+            {
+              space: APP_SPACE_ID,
+              contract: {
+                storageHash: validatedContract.storage.storageHash,
+                profileHash: validatedContract.profileHash,
+              },
+              marker: { created: true, updated: false },
+            },
+          ]);
 
           // Verify marker was written to database
           const marker = await familyInstance.readMarker({ driver, space: APP_SPACE_ID });
@@ -191,28 +184,25 @@ describe('family instance sign', () => {
             }),
           );
 
-          const result = (await familyInstance.sign({
+          const signatures = await familyInstance.signSpaces({
             driver,
-            contract: validatedContract,
-            contractPath: './contract.json',
-          })) as SignDatabaseResult;
+            spaces: [{ space: APP_SPACE_ID, contract: validatedContract }],
+          });
 
-          expect(result).toMatchObject({
-            ok: true,
-            marker: {
-              created: false,
-              updated: true,
-              previous: {
-                storageHash: 'old-hash',
-                profileHash: 'old-profile-hash',
+          expect(signatures).toEqual([
+            {
+              space: APP_SPACE_ID,
+              contract: {
+                storageHash: validatedContract.storage.storageHash,
+                profileHash: validatedContract.profileHash,
+              },
+              marker: {
+                created: false,
+                updated: true,
+                previous: { storageHash: 'old-hash', profileHash: 'old-profile-hash' },
               },
             },
-            contract: {
-              storageHash: validatedContract.storage.storageHash,
-            },
-          });
-          expect(result.summary).toContain('Database signed (marker updated from');
-          expect(result.timings.total).toBeGreaterThanOrEqual(0);
+          ]);
 
           // Verify marker was updated in database
           const marker = await familyInstance.readMarker({ driver, space: APP_SPACE_ID });
@@ -257,10 +247,9 @@ describe('family instance sign', () => {
             }),
           );
 
-          await familyInstance.sign({
+          await familyInstance.signSpaces({
             driver,
-            contract: validatedContract,
-            contractPath: './contract.json',
+            spaces: [{ space: APP_SPACE_ID, contract: validatedContract }],
           });
 
           const marker = await familyInstance.readMarker({ driver, space: APP_SPACE_ID });
@@ -321,39 +310,16 @@ describe('family instance sign', () => {
             }),
           );
 
-          // First sign - creates marker
-          const firstResult = (await familyInstance.sign({
-            driver,
-            contract: validatedContract,
-            contractPath: './contract.json',
-          })) as SignDatabaseResult;
-
-          expect(firstResult.ok).toBe(true);
-          expect(firstResult.marker.created).toBe(true);
+          const spaces = [{ space: APP_SPACE_ID, contract: validatedContract }];
+          const [first] = await familyInstance.signSpaces({ driver, spaces });
+          expect(first?.marker).toEqual({ created: true, updated: false });
 
           // Get the marker's updated_at timestamp
           const markerAfterFirst = await familyInstance.readMarker({ driver, space: APP_SPACE_ID });
           const firstUpdatedAt = markerAfterFirst?.updatedAt;
 
-          // Second sign - should be idempotent
-          const secondResult = (await familyInstance.sign({
-            driver,
-            contract: validatedContract,
-            contractPath: './contract.json',
-          })) as SignDatabaseResult;
-
-          expect(secondResult).toMatchObject({
-            ok: true,
-            summary: 'Database already signed with this contract',
-            marker: {
-              created: false,
-              updated: false,
-            },
-            contract: {
-              storageHash: validatedContract.storage.storageHash,
-            },
-          });
-          expect(secondResult.marker.previous).toBeUndefined();
+          const [second] = await familyInstance.signSpaces({ driver, spaces });
+          expect(second?.marker).toEqual({ created: false, updated: false });
 
           // Verify marker was not updated (updated_at should be the same)
           const markerAfterSecond = await familyInstance.readMarker({

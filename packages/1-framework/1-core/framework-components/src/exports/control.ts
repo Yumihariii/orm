@@ -72,7 +72,6 @@ export type {
   EmitContractResult,
   IntrospectSchemaResult,
   OperationContext,
-  SignDatabaseResult,
   SpaceSignature,
   SpaceToSign,
   VerifyDatabaseResult,

@@ -16,7 +16,6 @@ import type {
   PslContractInferCapable,
   SchemaDiffIssue,
   SchemaViewCapable,
-  SignDatabaseResult,
   SpaceSignature,
   SpaceToSign,
   VerifyDatabaseResult,
@@ -260,13 +259,6 @@ export interface SqlControlFamilyInstance
    * capability. Nothing is stamped on the issue or the node.
    */
   classifyEntityKind(issue: SchemaDiffIssue): string | undefined;
-
-  sign(options: {
-    readonly driver: SqlControlDriverInstance<string>;
-    readonly contract: unknown;
-    readonly contractPath: string;
-    readonly configPath?: string;
-  }): Promise<SignDatabaseResult>;
 
   introspect(options: {
     readonly driver: SqlControlDriverInstance<string>;
@@ -850,48 +842,6 @@ export function createSqlFamilyInstance<TTargetId extends string>(
         throw missingDescriptorOperationError(target.targetId, 'classifyEntityKind');
       }
       return classifyDiffEntityKind(issue, targetEntityKindOf);
-    },
-    async sign(options: {
-      readonly driver: SqlControlDriverInstance<string>;
-      readonly contract: unknown;
-      readonly contractPath: string;
-      readonly configPath?: string;
-    }): Promise<SignDatabaseResult> {
-      const { driver, contract: contractInput, contractPath, configPath } = options;
-      const startTime = Date.now();
-      const contract = loadContract(contractInput);
-      const [signature] = await signSpaces(driver, [{ space: APP_SPACE_ID, contract }]);
-      if (signature === undefined) {
-        throw new InternalError('signing the app space returned no signature');
-      }
-      const { marker } = signature;
-
-      let summary: string;
-      if (marker.created) {
-        summary = 'Database signed (marker created)';
-      } else if (marker.updated) {
-        summary = `Database signed (marker updated from ${marker.previous?.storageHash ?? 'unknown'})`;
-      } else {
-        summary = 'Database already signed with this contract';
-      }
-
-      return {
-        ok: true,
-        summary,
-        contract: signature.contract,
-        target: {
-          expected: contract.target,
-          actual: contract.target,
-        },
-        marker,
-        meta: {
-          contractPath,
-          ...(configPath ? { configPath } : {}),
-        },
-        timings: {
-          total: Date.now() - startTime,
-        },
-      };
     },
     async signSpaces(options: {
       readonly driver: SqlControlDriverInstance<string>;

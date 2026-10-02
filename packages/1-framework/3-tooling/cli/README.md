@@ -1450,7 +1450,7 @@ try {
 | `readMarker()` | Reads contract marker from database (null if none) |
 | `verify(options)` | Verifies database marker matches contract |
 | `schemaVerify(options)` | Verifies database schema satisfies contract |
-| `sign(options)` | Writes contract marker to database |
+| `dbSign(options)` | Verifies every contract space and writes the marker of each space that verified, as `db sign` does |
 | `dbInit(options)` | Initializes database schema from contract |
 | `dbUpdate(options)` | Updates database schema to match contract |
 | `migrate(options)` | Advances the database to the target contract via the migration graph |
@@ -1463,7 +1463,7 @@ Operations return structured result types:
 - `readMarker()` → `ContractMarkerRecord | null`
 - `verify()` → `VerifyDatabaseResult`
 - `schemaVerify()` → `VerifyDatabaseSchemaResult`
-- `sign()` → `SignDatabaseResult`
+- `dbSign()` → `ExecuteDbSignResult`, a `Result` whose success lists one `DbSignSpaceOutcome` per contract space
 - `dbInit()` → `Result<DbInitSuccess, DbInitFailure>` (uses Result pattern)
 - `dbUpdate()` → `Result<DbUpdateSuccess, DbUpdateFailure>` (uses Result pattern)
 - `migrate()` → `Result<MigrateSuccess, MigrateFailure>` (uses Result pattern)

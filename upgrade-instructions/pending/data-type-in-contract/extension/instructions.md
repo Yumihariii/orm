@@ -55,11 +55,14 @@ changes:
     summary: |
       `ControlFamilyInstance` has a new required method, `signSpaces({ driver, spaces })`, which
       writes the marker of every contract space it is given. `db sign` calls it once for all
-      spaces.
+      spaces. `ControlFamilyInstance.sign`, `ControlClient.sign`, `SignOptions` and
+      `SignDatabaseResult` are removed.
     detection:
       glob: "**/*.{ts,mts,cts}"
       matches:
         - '\bControlFamilyInstance\s*<'
+        - '\bSignDatabaseResult\b'
+        - '\bSignOptions\b'
   - id: sqlite-data-types-are-stored-types
     summary: |
       The SQLite target declares only the types SQLite stores, plus the two character types:
@@ -216,7 +219,9 @@ signSpaces(options: {
 }): Promise<readonly SpaceSignature[]>;
 ```
 
-`SpaceToSign` is `{ space, contract }`. The method writes each space's marker with its contract's hashes and returns one `SpaceSignature` per space: `{ space, contract: { storageHash, profileHash }, marker: { created, updated, previous? } }`. It does not verify the schema; `db sign` verifies every space before it calls the method. A family whose database has transactions writes every marker in one transaction, so a failed write leaves every marker as it was.
+`SpaceToSign` is `{ space, contract }`. The method writes each space's marker with its contract's hashes and returns one `SpaceSignature` per space: `{ space, contract: { storageHash, profileHash }, marker: { created, updated, previous? } }`. It does not verify the schema; `db sign` verifies every space before it calls the method. The SQL family writes every marker in one transaction, so a failed write leaves every marker as it was; the Mongo family writes them one by one, and running `db sign` again finishes the job.
+
+`ControlFamilyInstance.sign`, `ControlClient.sign`, `SignOptions` and `SignDatabaseResult` are removed: a family that implemented `sign` deletes it and keeps `signSpaces`, and code that called `client.sign({ contract })` calls `client.dbSign({ contract, migrationsDir })`, which verifies every contract space and signs each one that verified, as `db sign` does.
 
 ## `sqlite-data-types-are-stored-types`
 

@@ -12,7 +12,6 @@ import type {
   CoreSchemaView,
   MigrationPlanOperation,
   OperationPreview,
-  SignDatabaseResult,
   VerifyDatabaseResult,
   VerifyDatabaseSchemaResult,
 } from '@internal/framework-components/control';
@@ -63,7 +62,6 @@ import type {
   MigrateResult,
   OnControlProgress,
   SchemaVerifyOptions,
-  SignOptions,
   VerifyOptions,
 } from './types';
 
@@ -343,56 +341,6 @@ class ControlClientImpl implements ControlClient {
         action: 'schemaVerify',
         kind: 'spanEnd',
         spanId: 'schemaVerify',
-        outcome: 'error',
-      });
-      throw error;
-    }
-  }
-
-  async sign(options: SignOptions): Promise<SignDatabaseResult> {
-    const { onProgress } = options;
-    await this.connectWithProgress(options.connection, 'sign', onProgress);
-    const { driver, familyInstance } = await this.ensureConnected();
-
-    // Validate contract using family instance
-    let contract: Contract;
-    try {
-      contract = familyInstance.deserializeContract(options.contract);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw structuredError('CONTRACT.VALIDATION_FAILED', message, { cause: error });
-    }
-
-    // Emit sign span
-    onProgress?.({
-      action: 'sign',
-      kind: 'spanStart',
-      spanId: 'sign',
-      label: 'Signing database...',
-    });
-
-    try {
-      // Delegate to family instance sign method
-      const result = await familyInstance.sign({
-        driver,
-        contract,
-        contractPath: options.contractPath ?? '',
-        ...ifDefined('configPath', options.configPath),
-      });
-
-      onProgress?.({
-        action: 'sign',
-        kind: 'spanEnd',
-        spanId: 'sign',
-        outcome: 'ok',
-      });
-
-      return result;
-    } catch (error) {
-      onProgress?.({
-        action: 'sign',
-        kind: 'spanEnd',
-        spanId: 'sign',
         outcome: 'error',
       });
       throw error;

@@ -286,68 +286,51 @@ describe('db verify + db sign for Mongo (end-to-end)', {
     });
   });
 
-  describe('sign', () => {
-    it('creates marker on fresh database', async () => {
-      const instance = createInstance();
-      const result = await instance.sign({
-        driver: makeDriver(),
-        contract: baseContract,
-        contractPath: '/test/contract.json',
-      });
+  describe('signSpaces', () => {
+    const signApp = (contract: MongoContract) =>
+      createInstance().signSpaces({ driver: makeDriver(), spaces: [{ space: 'app', contract }] });
+    const updatedContract: MongoContract = {
+      ...baseContract,
+      storage: {
+        ...baseContract.storage,
+        storageHash: coreHash('updated-contract'),
+      },
+    };
 
-      expect(result.ok).toBe(true);
-      expect(result.marker.created).toBe(true);
-      expect(result.marker.updated).toBe(false);
-      expect(result.contract.storageHash).toBe(baseContract.storage.storageHash);
+    it('creates marker on fresh database', async () => {
+      expect(await signApp(baseContract)).toEqual([
+        {
+          space: 'app',
+          contract: {
+            storageHash: baseContract.storage.storageHash,
+            profileHash: baseContract.profileHash,
+          },
+          marker: { created: true, updated: false },
+        },
+      ]);
     });
 
     it('re-signing with same contract is idempotent', async () => {
-      const instance = createInstance();
+      await signApp(baseContract);
 
-      await instance.sign({
-        driver: makeDriver(),
-        contract: baseContract,
-        contractPath: '/test/contract.json',
-      });
+      const [signature] = await signApp(baseContract);
 
-      const result = await instance.sign({
-        driver: makeDriver(),
-        contract: baseContract,
-        contractPath: '/test/contract.json',
-      });
-
-      expect(result.ok).toBe(true);
-      expect(result.marker.created).toBe(false);
-      expect(result.marker.updated).toBe(false);
-      expect(result.summary).toContain('already signed');
+      expect(signature?.marker).toEqual({ created: false, updated: false });
     });
 
     it('updates marker when contract changes', async () => {
-      const instance = createInstance();
+      await signApp(baseContract);
 
-      await instance.sign({
-        driver: makeDriver(),
-        contract: baseContract,
-        contractPath: '/test/contract.json',
-      });
+      const [signature] = await signApp(updatedContract);
 
-      const updatedContract: MongoContract = {
-        ...baseContract,
-        storage: {
-          ...baseContract.storage,
-          storageHash: coreHash('updated-contract'),
+      expect(signature?.marker).toEqual({
+        created: false,
+        updated: true,
+        previous: {
+          storageHash: baseContract.storage.storageHash,
+          profileHash: baseContract.profileHash,
         },
-      };
-
-      const result = await instance.sign({
-        driver: makeDriver(),
-        contract: updatedContract,
-        contractPath: '/test/contract.json',
       });
-
-      expect(result.ok).toBe(true);
-      expect(result.marker.updated).toBe(true);
-      expect(result.marker.previous?.storageHash).toBe(baseContract.storage.storageHash);
     });
 
     it('preserves existing invariants when re-signing with a new contract', async () => {
@@ -360,21 +343,8 @@ describe('db verify + db sign for Mongo (end-to-end)', {
         invariants: ['email-verified', 'phone-backfill'],
       });
 
-      const updatedContract: MongoContract = {
-        ...baseContract,
-        storage: {
-          ...baseContract.storage,
-          storageHash: coreHash('updated-contract'),
-        },
-      };
-
-      const instance = createInstance();
-      const result = await instance.sign({
-        driver: makeDriver(),
-        contract: updatedContract,
-        contractPath: '/test/contract.json',
-      });
-      expect(result.ok).toBe(true);
+      const [signature] = await signApp(updatedContract);
+      expect(signature?.marker.updated).toBe(true);
 
       const markerDoc = await db
         .collection<{ _id: string; invariants?: readonly string[] }>('_prisma_migrations')

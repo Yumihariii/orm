@@ -91,7 +91,7 @@ export interface SqlControlAdapter<TTarget extends string = string>
 
   /**
    * Inserts the initial marker row for `space` (`INSERT` only). Fails when a
-   * row for that space already exists. Used by `sign()` so concurrent first-time
+   * row for that space already exists. Used by `signSpaces()` so concurrent first-time
    * stamps cannot silently overwrite each other. `updated_at` is DB-side
    * (`now()` / `datetime('now')`). Mirrors `MongoControlAdapter.initMarker`.
    */

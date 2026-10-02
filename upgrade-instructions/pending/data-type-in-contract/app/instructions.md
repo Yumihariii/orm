@@ -134,6 +134,8 @@ A script that reads `db sign --json` reads one outcome per space. The document w
 
 `status` is `signed`, `unchanged` (the marker already held the contract's hashes) or `failed`. A failed space has `space`, `status`, `contract: { storageHash }` and `schema`, the verification result, in place of `marker`, and `ok` is `false`.
 
+Code that signs through the programmatic control API calls `client.dbSign({ contract, migrationsDir })` instead of `client.sign({ contract })`, which is removed with `SignOptions` and `SignDatabaseResult`. `dbSign` verifies every contract space and signs each one that verified, as `db sign` does.
+
 ## `parameter-casts-use-base-names`
 
 Update tests that assert query text or SQL snapshots:
