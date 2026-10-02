@@ -1,82 +1,19 @@
-import { spawnSync } from 'node:child_process';
-import {
-  chmodSync,
-  cpSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { timeouts } from '@repo/test-utils';
-import { dirname, join, relative } from 'pathe';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'pathe';
 import { afterAll, describe, expect, it } from 'vitest';
+import {
+  appScript,
+  copyFixture,
+  expectedTree,
+  extensionScript,
+  type Run,
+  readTree,
+  removeWorkDirs,
+  runScript,
+  upgrade,
+} from './test-helpers';
 
-const SCRIPT_PATHS = {
-  app: 'upgrade-instructions/pending/data-type-in-contract/app/scripts/data-type-in-contract.ts',
-  extension:
-    'upgrade-instructions/pending/data-type-in-contract/extension/scripts/data-type-in-contract.ts',
-} as const;
-
-const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = join(here, '../../../../..');
-const fixtures = join(here, 'fixtures');
-const appScript = join(repoRoot, SCRIPT_PATHS.app);
-const extensionScript = join(repoRoot, SCRIPT_PATHS.extension);
-const workDirs: string[] = [];
-
-afterAll(() => {
-  for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
-});
-
-function readTree(root: string, dir = root): Record<string, string> {
-  const files: Record<string, string> = {};
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) Object.assign(files, readTree(root, path));
-    else if (entry.isFile()) files[relative(root, path)] = readFileSync(path, 'utf8');
-  }
-  return files;
-}
-
-interface Run {
-  readonly root: string;
-  readonly status: number | null;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function makeWorkDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  workDirs.push(dir);
-  return dir;
-}
-
-function copyFixture(name: string, side: 'before' | 'after'): string {
-  const root = makeWorkDir(`data-type-in-contract-${name}-`);
-  cpSync(join(fixtures, name, side), root, { recursive: true });
-  return root;
-}
-
-function runScript(root: string, script = appScript, options: readonly string[] = []): Run {
-  const result = spawnSync(process.execPath, [script, root, ...options], { encoding: 'utf8' });
-  return { root, status: result.status, stdout: result.stdout, stderr: result.stderr };
-}
-
-function upgrade(name: string, side: 'before' | 'after' = 'before', script = appScript): Run {
-  return runScript(copyFixture(name, side), script);
-}
-
-function expectedTree(name: string, side: 'before' | 'after'): Record<string, string> {
-  return readTree(join(fixtures, name, side));
-}
+afterAll(removeWorkDirs);
 
 describe('a Postgres project with an extension space and three snapshots', () => {
   const run = upgrade('postgres-extension-space');
@@ -138,20 +75,6 @@ describe('a SQLite project with literal defaults', () => {
   });
 });
 
-describe('migrations outside a directory named migrations', () => {
-  for (const name of ['db-migrations', 'two-migration-roots']) {
-    it(`upgrades ${name}`, () => {
-      const run = upgrade(name);
-      expect({
-        status: run.status,
-        stdout: run.stdout,
-        stderr: run.stderr,
-        tree: readTree(run.root),
-      }).toEqual({ status: 0, stdout: '', stderr: '', tree: expectedTree(name, 'after') });
-    });
-  }
-});
-
 describe('a JSON column whose default document holds codecId and nativeType', () => {
   const document = { codecId: 'pg/text@1', nativeType: 'text' };
   const documentDts =
@@ -193,53 +116,6 @@ describe('a JSON column whose default document holds codecId and nativeType', ()
   });
 });
 
-describe('a project whose directories are symbolic links', () => {
-  const name = 'postgres-extension-space';
-  const upgraded = { status: 0, stdout: '', stderr: '' };
-  const outcome = (run: Run, tree: Record<string, string>) => ({
-    status: run.status,
-    stdout: run.stdout,
-    stderr: run.stderr,
-    tree,
-  });
-
-  it('upgrades a migrations directory that is a link to a sibling directory', () => {
-    const root = copyFixture(name, 'before');
-    const elsewhere = makeWorkDir(`data-type-in-contract-${name}-elsewhere-`);
-    renameSync(join(root, 'migrations'), join(elsewhere, 'migrations'));
-    symlinkSync(join(elsewhere, 'migrations'), join(root, 'migrations'), 'dir');
-    const run = runScript(root);
-    expect({
-      ...outcome(run, { ...readTree(root), ...readTree(elsewhere) }),
-      linkKept: lstatSync(join(root, 'migrations')).isSymbolicLink(),
-    }).toEqual({ ...upgraded, tree: expectedTree(name, 'after'), linkKept: true });
-  });
-
-  it('upgrades a directory reachable through a link and through its own path once', () => {
-    const root = copyFixture(name, 'before');
-    renameSync(join(root, 'migrations'), join(root, 'db-history'));
-    symlinkSync(join(root, 'db-history'), join(root, 'migrations'), 'dir');
-    const run = runScript(root);
-    const expected = Object.fromEntries(
-      Object.entries(expectedTree(name, 'after')).map(([path, content]) => [
-        path.replace(/^migrations\//, 'db-history/'),
-        content,
-      ]),
-    );
-    expect(outcome(run, readTree(root))).toEqual({ ...upgraded, tree: expected });
-  });
-
-  it('stops at a link that points to its own parent', () => {
-    const root = copyFixture(name, 'before');
-    symlinkSync(join(root, 'migrations'), join(root, 'migrations', 'loop'), 'dir');
-    const run = runScript(root);
-    expect(outcome(run, readTree(root))).toEqual({
-      ...upgraded,
-      tree: expectedTree(name, 'after'),
-    });
-  });
-});
-
 describe('a SQLite project with enums typed by integer codecs', () => {
   it('rewrites their value sets, domain members and defaults as digit text', () => {
     const run = upgrade('sqlite-integer-enums');
@@ -275,107 +151,6 @@ describe('an extension package', () => {
 
   it('ships the same script to both audiences', () => {
     expect(readFileSync(extensionScript, 'utf8')).toBe(readFileSync(appScript, 'utf8'));
-  });
-});
-
-describe('a run that stops partway', () => {
-  const failAtWrite = join(here, 'fail-at-write.ts');
-
-  function runFailingAt(root: string, failAt: number): Run {
-    const result = spawnSync(process.execPath, ['--import', failAtWrite, appScript, root], {
-      encoding: 'utf8',
-      env: { ...process.env, FAIL_AT_WRITE: String(failAt) },
-    });
-    return { root, status: result.status, stdout: result.stdout, stderr: result.stderr };
-  }
-
-  for (const name of [
-    'postgres-extension-space',
-    'snapshot-already-present',
-    'two-migration-roots',
-  ]) {
-    it(`leaves ${name} in a state a second run finishes, whichever write fails`, {
-      timeout: timeouts.repeatedScriptRuns,
-    }, () => {
-      const expected = expectedTree(name, 'after');
-      const outcomes: { failAt: number; first: unknown; second: unknown }[] = [];
-      for (let failAt = 1; ; failAt++) {
-        const first = runFailingAt(copyFixture(name, 'before'), failAt);
-        if (first.status === 0) break;
-        const second = runScript(first.root);
-        outcomes.push({
-          failAt,
-          first: { status: first.status, stderr: first.stderr },
-          second: { status: second.status, stderr: second.stderr, tree: readTree(second.root) },
-        });
-      }
-      expect(outcomes.length).toBeGreaterThan(2);
-      expect(outcomes).toEqual(
-        outcomes.map(({ failAt }) => ({
-          failAt,
-          first: {
-            status: 1,
-            stderr: `injected failure at write ${failAt}; the upgrade stopped partway, run the script again to finish it\n`,
-          },
-          second: { status: 0, stderr: '', tree: expected },
-        })),
-      );
-    });
-  }
-});
-
-describe('a file the script rewrites', () => {
-  it('keeps its file mode', () => {
-    const root = copyFixture('postgres-extension-space', 'before');
-    const path = join(root, 'migrations/app/20260101T0000_initial/migration.ts');
-    chmodSync(path, 0o755);
-    const run = runScript(root);
-    expect({ status: run.status, mode: statSync(path).mode & 0o777 }).toEqual({
-      status: 0,
-      mode: 0o755,
-    });
-  });
-});
-
-describe('a contract.json that is not valid JSON', () => {
-  it('names the file, changes no file and exits 1', () => {
-    const root = copyFixture('postgres-extension-space', 'before');
-    const path = join(root, 'prisma/contract.json');
-    writeFileSync(path, readFileSync(path, 'utf8').slice(0, 100));
-    const before = readTree(root);
-    const run = runScript(root);
-    expect({ status: run.status, stderr: run.stderr, tree: readTree(root) }).toEqual({
-      status: 1,
-      stderr: 'prisma/contract.json: not valid JSON\n',
-      tree: before,
-    });
-  });
-});
-
-describe('a migration.ts that writes hashes as literals', () => {
-  const oldHash = '3d2c56a2944685bd21b05bc8a8d73164397df51c014201902932fbe7e80ff1b8';
-  const newHash = '4a96b488a4ce92b434e5f7d6607b6435c0955f0d36b0018077045787764240e6';
-  const unrelated = 'c'.repeat(64);
-  const migrationTs = (hash: string) =>
-    [
-      'export default class M extends Migration {',
-      `  readonly checksum = '${unrelated}';`,
-      '  override describe() {',
-      `    return { from: '${hash}', to: '${hash}' };`,
-      '  }',
-      '}',
-      '',
-    ].join('\n');
-
-  it('replaces every mapped hash and leaves other hashes unchanged', () => {
-    const root = copyFixture('extension-package', 'before');
-    const path = join(root, 'migrations', '20260601T0000_install_vector_extension', 'migration.ts');
-    writeFileSync(path, migrationTs(oldHash));
-    const run = runScript(root, extensionScript);
-    expect({ status: run.status, migrationTs: readFileSync(path, 'utf8') }).toEqual({
-      status: 0,
-      migrationTs: migrationTs(newHash),
-    });
   });
 });
 
@@ -423,181 +198,6 @@ describe('a project already in the new format', () => {
       status: 0,
       stdout: '',
       tree: expectedTree('postgres-extension-space', 'after'),
-    });
-  });
-});
-
-describe('a codec the script does not know', () => {
-  const unchanged = (run: Run) => ({
-    status: run.status,
-    stdout: run.stdout,
-    stderr: run.stderr,
-    tree: readTree(run.root),
-  });
-
-  it('names each file, the codec and the option, changes no file and exits 1', () => {
-    const run = upgrade('unknown-codec');
-    const snapshot = Object.keys(expectedTree('unknown-codec', 'before')).find(
-      (path) => path.startsWith('migrations/snapshots/') && path.endsWith('/contract.json'),
-    );
-    expect(unchanged(run)).toEqual({
-      status: 1,
-      stdout: '',
-      stderr: [
-        `${snapshot}: unknown codec acme/shape@1; name its data type with --data-type acme/shape@1=<data type id>`,
-        'prisma/contract.json: unknown codec acme/shape@1; name its data type with --data-type acme/shape@1=<data type id>',
-        '',
-      ].join('\n'),
-      tree: expectedTree('unknown-codec', 'before'),
-    });
-  });
-
-  it('upgrades when --data-type names its data type', () => {
-    const run = runScript(copyFixture('unknown-codec', 'before'), appScript, [
-      '--data-type',
-      'acme/shape@1=acme/shape',
-    ]);
-    expect(unchanged(run)).toEqual({
-      status: 0,
-      stdout: '',
-      stderr: '',
-      tree: expectedTree('unknown-codec', 'after'),
-    });
-  });
-
-  for (const value of ['acme/shape@1', 'acme/shape@1=', '=acme/shape', 'acme/shape@1=Acme Shape']) {
-    it(`refuses the malformed value ${JSON.stringify(value)} without changing a file`, () => {
-      const run = runScript(copyFixture('unknown-codec', 'before'), appScript, [
-        '--data-type',
-        value,
-      ]);
-      expect(unchanged(run)).toEqual({
-        status: 1,
-        stdout: '',
-        stderr: `--data-type ${value}: expected <codec id>=<data type id>, for example acme/shape@1=acme/shape\n`,
-        tree: expectedTree('unknown-codec', 'before'),
-      });
-    });
-  }
-
-  it('refuses to change the data type of a codec it already knows', () => {
-    const run = runScript(copyFixture('unknown-codec', 'before'), appScript, [
-      '--data-type',
-      'acme/shape@1=acme/shape',
-      '--data-type',
-      'pg/uuid@1=pg/text',
-    ]);
-    expect(unchanged(run)).toEqual({
-      status: 1,
-      stdout: '',
-      stderr:
-        '--data-type pg/uuid@1=pg/text: the script already maps pg/uuid@1 to pg/uuid on target postgres\n',
-      tree: expectedTree('unknown-codec', 'before'),
-    });
-  });
-});
-
-describe('a contract on a target the script does not know', () => {
-  it('takes --data-type for a codec the script maps on other targets', () => {
-    const run = runScript(copyFixture('unknown-target', 'before'), appScript, [
-      '--data-type',
-      'sql/int@1=acme/int4',
-    ]);
-    expect({
-      status: run.status,
-      stdout: run.stdout,
-      stderr: run.stderr,
-      tree: readTree(run.root),
-    }).toEqual({
-      status: 0,
-      stdout: '',
-      stderr: '',
-      tree: expectedTree('unknown-target', 'after'),
-    });
-  });
-});
-
-describe('a snapshot directory that already holds the new hash', () => {
-  it('stops when its content differs, changes no file and exits 1', () => {
-    const run = upgrade('snapshot-collision');
-    expect({
-      status: run.status,
-      stdout: run.stdout,
-      stderr: run.stderr,
-      tree: readTree(run.root),
-    }).toEqual({
-      status: 1,
-      stdout: '',
-      stderr:
-        'migrations/snapshots/d3a277a78b83a532f1ce006d0b7b5e059cc9d15a440922acd9df1055156afbf2: snapshot directory already exists with different content\n',
-      tree: expectedTree('snapshot-collision', 'before'),
-    });
-  });
-
-  it('removes the old directory when the content is the same', () => {
-    const run = upgrade('snapshot-already-present');
-    expect({
-      status: run.status,
-      stdout: run.stdout,
-      stderr: run.stderr,
-      tree: readTree(run.root),
-    }).toEqual({
-      status: 0,
-      stdout: '',
-      stderr: '',
-      tree: expectedTree('snapshot-already-present', 'after'),
-    });
-  });
-});
-
-describe('a snapshot whose stored hash does not recompute', () => {
-  it('rehashes it from content, says so and rewrites everything that names it', () => {
-    const run = upgrade('stale-hash');
-    expect({
-      status: run.status,
-      stdout: run.stdout,
-      stderr: run.stderr,
-      tree: readTree(run.root),
-    }).toEqual({
-      status: 0,
-      stdout: `migrations/snapshots/${'a'.repeat(64)}/contract.json: stored hash did not recompute; rehashed from content\n`,
-      stderr: '',
-      tree: expectedTree('stale-hash', 'after'),
-    });
-  });
-});
-
-describe('an emitted contract edited by hand after its last snapshot', () => {
-  it('writes the same new storage hash into contract.json and contract.d.ts', () => {
-    const root = copyFixture('postgres-extension-space', 'before');
-    const path = join(root, 'prisma/contract.json');
-    const contract = JSON.parse(readFileSync(path, 'utf8'));
-    contract.storage.namespaces.public.entries.table.post.columns.note = {
-      codecId: 'pg/text@1',
-      nativeType: 'text',
-      nullable: true,
-    };
-    writeFileSync(path, JSON.stringify(contract, null, 2));
-    const run = runScript(root);
-    const upgraded = JSON.parse(readFileSync(path, 'utf8'));
-    const dtsHash = /StorageHashBase<'([0-9a-f]{64})'>/.exec(
-      readFileSync(join(root, 'prisma/contract.d.ts'), 'utf8'),
-    )?.[1];
-    expect({ status: run.status, stdout: run.stdout, dtsHash }).toEqual({
-      status: 0,
-      stdout: 'prisma/contract.json: stored hash did not recompute; rehashed from content\n',
-      dtsHash: upgraded.storage.storageHash,
-    });
-  });
-});
-
-describe('the project root', () => {
-  it('defaults to the working directory', () => {
-    const root = copyFixture('sqlite-defaults', 'before');
-    const result = spawnSync(process.execPath, [appScript], { cwd: root, encoding: 'utf8' });
-    expect({ status: result.status, tree: readTree(root) }).toEqual({
-      status: 0,
-      tree: expectedTree('sqlite-defaults', 'after'),
     });
   });
 });
