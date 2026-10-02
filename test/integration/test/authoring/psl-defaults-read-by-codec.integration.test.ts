@@ -123,7 +123,7 @@ model Task {
       {
         code: 'PSL_EXTENSION_INVALID_VALUE',
         message:
-          'enum "Priority" member "Low" was rejected by codec "pg/int@1": pg/int@1 JSON value must be an integer from -2147483648 to 2147483647',
+          'enum "Priority" member "Low": pg/int4 has no cast from pg/int8; it casts from pg/int2',
       },
     ]);
   });
@@ -144,7 +144,7 @@ model Task {
         'a text member under an integer codec',
         '  @@type("pg/int4@1")\n  Low = "low"',
         'PSL_EXTENSION_INVALID_VALUE',
-        'enum "Priority" member "Low" was rejected by codec "pg/int4@1": pg/int4@1 JSON value must be an integer from -2147483648 to 2147483647',
+        'enum "Priority" member "Low": pg/int4 has no cast from pg/text; it casts from pg/int2',
       ],
       [
         'a bare member under an integer codec',
@@ -156,13 +156,13 @@ model Task {
         'a number member under a text codec',
         '  @@type("pg/text@1")\n  Low = 1',
         'PSL_EXTENSION_INVALID_VALUE',
-        'enum "Priority" member "Low" was rejected by codec "pg/text@1": pg/text@1 JSON value must be a string',
+        'enum "Priority" member "Low": pg/text has no cast from pg/int2; it casts from nothing',
       ],
       [
         'a fraction under an integer codec',
         '  @@type("pg/int4@1")\n  Low = 1.5',
         'PSL_EXTENSION_INVALID_VALUE',
-        'enum "Priority" member "Low" was rejected by codec "pg/int4@1": pg/int4@1 JSON value must be an integer from -2147483648 to 2147483647',
+        'enum "Priority" member "Low": pg/int4 has no cast from pg/numeric; it casts from pg/int2',
       ],
     ])('refuses %s', async (_name, members, code, message) => {
       expect(await diagnosticsOf(enumOf(members))).toEqual([{ code, message }]);
@@ -186,7 +186,7 @@ model Task {
         {
           code: 'PSL_EXTENSION_INVALID_VALUE',
           message:
-            'enum "Priority" member "Low" was rejected by codec "sql/int@1": sql/int@1 JSON value must be an integer from -2147483648 to 2147483647',
+            'enum "Priority" member "Low": pg/int4 has no cast from pg/int8; it casts from pg/int2',
         },
       ]);
     });
