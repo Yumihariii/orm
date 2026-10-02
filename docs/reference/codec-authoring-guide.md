@@ -668,6 +668,8 @@ Type constructors, field presets and SQL declarations are checked at assembly to
 9. **Two SQL data types claim the same reported type**: a claiming text of one matches a claiming text of the other, or both claim the same kind.
 10. **A codec in a SQL stack represents a data type that is not a SQL data type** (declared with plain `dataType` rather than `sqlDataType`). The error names the codec, its data type and the data type's contributor.
 
+The SQL family runs items 9 and 10 when it creates its control instance, together with its check that no type casts from `sql/expression`, so the CLI reports them and the language server does not.
+
 The reverse of the fourth is not required: a type may be reachable only through casts. These checks span packs, which is why they run at assembly — `pgvector/vector` taking `pg/numeric` values is valid only when the Postgres target that owns `pg/numeric` is in the stack. Within a pack, refer to a type by its constant rather than by string, so a misspelt id fails to compile.
 
 ### A codec whose data type depends on the target
