@@ -22,6 +22,15 @@ describe('a contract emitted before columns named their data type', () => {
     );
   });
 
+  it('is refused, naming the first five paths and the total count', () => {
+    const contractJson: unknown = JSON.parse(readFileSync(fixturePath, 'utf8'));
+    expect(() => new PostgresContractSerializer().deserializeContract(contractJson)).toThrow(
+      expect.objectContaining({
+        message: expect.stringMatching(/"dataType"; and 328 more paths \(333 in all\)$/),
+      }),
+    );
+  });
+
   it('is refused without mentioning an upgrade script', () => {
     const contractJson: unknown = JSON.parse(readFileSync(fixturePath, 'utf8'));
     expect(() => new PostgresContractSerializer().deserializeContract(contractJson)).toThrow(

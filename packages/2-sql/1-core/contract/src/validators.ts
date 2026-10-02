@@ -176,21 +176,52 @@ export function valueObjectStorageTypeMissingMessage(columnPath: string): string
   return `${columnPath}: a value-object column needs the stack's value-object storage type, and the stack declares none`;
 }
 
-/**
- * Contracts emitted before a column named its data type stored the database type name in `nativeType`. Each such key is reported with its path, so an old contract is refused with a message that says what changed.
- */
-function storedTypeNameProblems(value: unknown, path: string): readonly string[] {
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => storedTypeNameProblems(item, `${path}.${index}`));
-  }
-  if (!isPlainRecord(value)) return [];
-  return Object.entries(value).flatMap(([key, child]) =>
-    key === 'nativeType'
-      ? [
-          `${path}.nativeType: contracts no longer store a column's database type name; the column names its data type in "dataType"`,
-        ]
-      : storedTypeNameProblems(child, `${path}.${key}`),
+const LISTED_STORED_TYPE_NAMES = 5;
+
+function fieldOf(value: unknown, key: string): unknown {
+  return isPlainRecord(value) ? value[key] : undefined;
+}
+
+function entriesOf(value: unknown): readonly (readonly [string, unknown])[] {
+  return isPlainRecord(value) ? Object.entries(value) : [];
+}
+
+function storedTypeNamePaths(storage: unknown): readonly string[] {
+  const columns = entriesOf(fieldOf(storage, 'namespaces')).flatMap(([namespaceId, namespace]) =>
+    entriesOf(fieldOf(fieldOf(namespace, 'entries'), 'table')).flatMap(([tableName, table]) =>
+      entriesOf(fieldOf(table, 'columns')).map(([columnName, column]) => ({
+        path: `storage.namespaces.${namespaceId}.entries.table.${tableName}.columns.${columnName}`,
+        entry: column,
+      })),
+    ),
   );
+  const types = entriesOf(fieldOf(storage, 'types')).map(([typeName, entry]) => ({
+    path: `storage.types.${typeName}`,
+    entry,
+  }));
+  return [...columns, ...types]
+    .filter(({ entry }) => isPlainRecord(entry) && Object.hasOwn(entry, 'nativeType'))
+    .map(({ path }) => path);
+}
+
+/**
+ * Contracts emitted before a column named its data type stored the database type name in `nativeType` on columns and `storage.types` entries. The first five such keys are reported with their paths and the rest are counted, so an old contract is refused with a short message that says what changed.
+ */
+function storedTypeNameProblems(storage: unknown): readonly string[] {
+  const paths = storedTypeNamePaths(storage);
+  const listed = paths
+    .slice(0, LISTED_STORED_TYPE_NAMES)
+    .map(
+      (path) =>
+        `${path}.nativeType: contracts no longer store a column's database type name; the column names its data type in "dataType"`,
+    );
+  const unlisted = paths.length - listed.length;
+  return unlisted > 0
+    ? [
+        ...listed,
+        `and ${unlisted} more ${unlisted === 1 ? 'path' : 'paths'} (${paths.length} in all)`,
+      ]
+    : listed;
 }
 
 type NamespacedStorageWalk = {
@@ -482,7 +513,7 @@ const SqlContractSchema = createSqlContractSchema(DEFAULT_SQL_KINDS);
  * @throws Error if the storage structure is invalid
  */
 export function validateStorage(value: unknown): void {
-  const storedTypeNames = storedTypeNameProblems(value, 'storage');
+  const storedTypeNames = storedTypeNameProblems(value);
   const result = StorageSchema(value);
   const errors =
     storedTypeNames.length > 0
@@ -541,10 +572,7 @@ function validateSqlContractStructure<T extends Contract<SqlStorage>>(
     );
   }
 
-  const storedTypeNames = storedTypeNameProblems(
-    isPlainRecord(value) ? value['storage'] : undefined,
-    'storage',
-  );
+  const storedTypeNames = storedTypeNameProblems(fieldOf(value, 'storage'));
   if (storedTypeNames.length > 0) {
     throw new ContractValidationError(
       `Contract structural validation failed: ${storedTypeNames.join('; ')}`,

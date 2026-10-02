@@ -207,19 +207,34 @@ describe('SQL contract validators', () => {
     const columnsPath = `storage.namespaces.${UNBOUND_NAMESPACE_ID}.entries.table.user.columns`;
     const refusal = (path: string) =>
       `${path}.nativeType: contracts no longer store a column's database type name; the column names its data type in "dataType"`;
-    const storageWithColumn = (column: Record<string, unknown>) => ({
+    const storageWithColumns = (columns: Record<string, Record<string, unknown>>) => ({
       storageHash: 'test',
       namespaces: {
         [UNBOUND_NAMESPACE_ID]: {
           id: UNBOUND_NAMESPACE_ID,
           entries: {
             table: {
-              user: { columns: { id: column }, uniques: [], indexes: [], foreignKeys: [] },
+              user: { columns, uniques: [], indexes: [], foreignKeys: [] },
             },
           },
         },
       },
     });
+    const storageWithColumn = (column: Record<string, unknown>) =>
+      storageWithColumns({ id: column });
+    const oldColumns = (count: number) =>
+      Object.fromEntries(
+        Array.from({ length: count }, (_, index) => [
+          `c${index}`,
+          { nativeType: 'int4', codecId: 'pg/int4@1', nullable: false },
+        ]),
+      );
+    const jsonDefaultWithNativeTypeKey = {
+      dataType: 'pg/jsonb',
+      codecId: 'pg/jsonb@1',
+      nullable: false,
+      default: { kind: 'literal', value: { nativeType: 'default', nested: [{ nativeType: 1 }] } },
+    };
 
     it('refuses a column that stores its database type name', () => {
       const storage = storageWithColumn({
@@ -269,6 +284,42 @@ describe('SQL contract validators', () => {
           message: `Contract structural validation failed: ${refusal(`${columnsPath}.id`)}`,
         }) as unknown as Error,
       );
+    });
+
+    it('names the first five paths and the total count when more keys store a database type name', () => {
+      const listed = [0, 1, 2, 3, 4].map((index) => refusal(`${columnsPath}.c${index}`));
+      expect(() => validateStorage(storageWithColumns(oldColumns(7)))).toThrowError(
+        expect.objectContaining({
+          code: 'CONTRACT.VALIDATION_FAILED',
+          message: `Storage validation failed: ${[...listed, 'and 2 more paths (7 in all)'].join('; ')}`,
+        }) as unknown as Error,
+      );
+    });
+
+    it('names the first five paths and the total count through the full validator', () => {
+      const listed = [0, 1, 2, 3, 4].map((index) => refusal(`${columnsPath}.c${index}`));
+      const contract = {
+        ...createContract<SqlStorage>({ storage: unboundTables({}) }),
+        storage: storageWithColumns(oldColumns(6)),
+      };
+      expect(() => validateSqlContractFully(contract)).toThrowError(
+        expect.objectContaining({
+          code: 'CONTRACT.VALIDATION_FAILED',
+          message: `Contract structural validation failed: ${[...listed, 'and 1 more path (6 in all)'].join('; ')}`,
+        }) as unknown as Error,
+      );
+    });
+
+    it('accepts a JSON default whose document has a nativeType key', () => {
+      expect(() => validateStorage(storageWithColumn(jsonDefaultWithNativeTypeKey))).not.toThrow();
+    });
+
+    it('accepts a JSON default whose document has a nativeType key through the full validator', () => {
+      const contract = {
+        ...createContract<SqlStorage>({ storage: unboundTables({}) }),
+        storage: storageWithColumn(jsonDefaultWithNativeTypeKey),
+      };
+      expect(() => validateSqlContractFully(contract)).not.toThrow();
     });
 
     it('refuses a column without a data type', () => {
