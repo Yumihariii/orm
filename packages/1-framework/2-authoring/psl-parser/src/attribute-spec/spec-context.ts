@@ -4,7 +4,12 @@ import type { ControlMutationDefaultRegistry } from '@internal/framework-compone
 import type { Resolution } from '../binder';
 import type { BlockSpecContext } from '../block-spec/types';
 import type { FieldSymbol, ModelSymbol, SymbolTable } from '../symbol-table';
-import type { AttributeCtx, AttributeSpec, FieldAttributeCtx, ModelAttributeCtx } from './types';
+import type {
+  AttributeSpec,
+  BlockAttributeCtx,
+  FieldAttributeCtx,
+  ModelAttributeCtx,
+} from './types';
 
 export interface AttributeSpecContext {
   readonly symbols: SymbolTable;
@@ -36,4 +41,4 @@ export interface AttributeSpecNamespace {
 
 export type BlockAttributeSpecFactory = (
   ctx: BlockSpecContext,
-) => AttributeSpec<never, AttributeCtx>;
+) => AttributeSpec<never, BlockAttributeCtx>;
