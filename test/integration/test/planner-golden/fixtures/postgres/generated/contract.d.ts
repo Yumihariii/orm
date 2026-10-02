@@ -1978,13 +1978,6 @@ type ContractBase = Omit<
             readonly package: '@internal/extension-pgvector/operation-types';
           };
         };
-        readonly storage: readonly [
-          {
-            readonly familyId: 'sql';
-            readonly targetId: 'postgres';
-            readonly typeId: 'pg/vector@1';
-          },
-        ];
       };
       readonly version: '0.0.1';
     };
@@ -2016,13 +2009,6 @@ type ContractBase = Omit<
             readonly package: '@internal/extension-postgis/operation-types';
           };
         };
-        readonly storage: readonly [
-          {
-            readonly familyId: 'sql';
-            readonly targetId: 'postgres';
-            readonly typeId: 'pg/geometry@1';
-          },
-        ];
       };
       readonly version: '0.0.1';
     };

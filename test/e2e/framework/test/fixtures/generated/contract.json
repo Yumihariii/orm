@@ -1152,14 +1152,7 @@
             "named": "CodecTypes",
             "package": "@internal/extension-arktype-json/codec-types"
           }
-        },
-        "storage": [
-          {
-            "familyId": "sql",
-            "targetId": "postgres",
-            "typeId": "arktype/json@1"
-          }
-        ]
+        }
       },
       "version": "0.0.1"
     },
@@ -1201,14 +1194,7 @@
             "named": "QueryOperationTypes",
             "package": "@internal/extension-pgvector/operation-types"
           }
-        },
-        "storage": [
-          {
-            "familyId": "sql",
-            "targetId": "postgres",
-            "typeId": "pg/vector@1"
-          }
-        ]
+        }
       },
       "version": "0.0.1"
     }

@@ -1421,13 +1421,6 @@ type ContractBase = Omit<
             readonly package: '@internal/extension-pgvector/operation-types';
           };
         };
-        readonly storage: readonly [
-          {
-            readonly familyId: 'sql';
-            readonly targetId: 'postgres';
-            readonly typeId: 'pg/vector@1';
-          },
-        ];
       };
       readonly version: '0.0.1';
     };
