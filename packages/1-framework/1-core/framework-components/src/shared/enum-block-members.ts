@@ -11,7 +11,7 @@ export interface EnumBlockMember {
 }
 
 /**
- * Reads the members of an `enum` block through its codec. A member written as a number literal is read from its source text as a column default is read, when the family gives a reader for it (`ctx.readWrittenNumber`), so no digit is lost; every other member goes to the codec's `decodeJson`, and a bare member is read from its own name.
+ * Reads the members of an `enum` block through its codec. A member written as a number literal is read from its source text as a column default is read, when the family gives a reader for it (`ctx.readWrittenNumber`), so no digit is lost; when that reader refuses the number, the codec's `decodeJson` reads it, and only if the codec refuses it too is the reader's reason reported. Every other member goes to the codec's `decodeJson`, and a bare member is read from its own name.
  * Pushes a diagnostic and returns `undefined` when the codec refuses a member, when two members
  * store the same value, or when the block has no members. Shared by every family's enum factory.
  */
@@ -37,36 +37,32 @@ export function readEnumBlockMembers(
             subject: `enum "${block.name}" member "${memberName}"`,
           })
         : undefined;
-    if (reading !== undefined && !reading.ok) {
-      diagnostics?.push({
-        code: 'PSL_EXTENSION_INVALID_VALUE',
-        message: reading.message,
-        sourceId,
-        span,
-      });
-      memberError = true;
-      continue;
-    }
-    const written = reading?.value ?? (memberValue === undefined ? memberName : memberValue);
+    const written = reading?.ok
+      ? reading.value
+      : memberValue === undefined
+        ? memberName
+        : memberValue;
     let read: unknown;
     try {
       read = codec.decodeJson(written);
     } catch (err) {
       if (isInternalError(err)) throw err;
       diagnostics?.push(
-        memberValue === undefined
-          ? {
-              code: 'PSL_ENUM_BARE_MEMBER_NON_STRING_CODEC',
-              message: `enum "${block.name}" member "${memberName}" has no value and codec "${codecId}" does not accept a bare name as input`,
-              sourceId,
-              span,
-            }
-          : {
-              code: 'PSL_EXTENSION_INVALID_VALUE',
-              message: `enum "${block.name}" member "${memberName}" was rejected by codec "${codecId}": ${err instanceof Error ? err.message : String(err)}`,
-              sourceId,
-              span,
-            },
+        reading !== undefined && !reading.ok
+          ? { code: 'PSL_EXTENSION_INVALID_VALUE', message: reading.message, sourceId, span }
+          : memberValue === undefined
+            ? {
+                code: 'PSL_ENUM_BARE_MEMBER_NON_STRING_CODEC',
+                message: `enum "${block.name}" member "${memberName}" has no value and codec "${codecId}" does not accept a bare name as input`,
+                sourceId,
+                span,
+              }
+            : {
+                code: 'PSL_EXTENSION_INVALID_VALUE',
+                message: `enum "${block.name}" member "${memberName}" was rejected by codec "${codecId}": ${err instanceof Error ? err.message : String(err)}`,
+                sourceId,
+                span,
+              },
       );
       memberError = true;
       continue;

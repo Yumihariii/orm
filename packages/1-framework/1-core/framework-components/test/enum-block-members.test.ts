@@ -41,6 +41,15 @@ const lowerCasingCodec: Codec = {
   },
 };
 
+/** Reads any JSON value unchanged, as a JSON column's codec does. */
+const anyJsonCodec: Codec = {
+  id: 'test/any-json@1',
+  encode: async (v: unknown) => v,
+  decode: async (w: unknown) => w,
+  encodeJson: (value) => value as JsonValue,
+  decodeJson: (json) => json,
+};
+
 function read(values: Record<string, JsonValue | undefined>, codec: Codec = lowerCasingCodec) {
   const diagnostics: unknown[] = [];
   const members = readEnumBlockMembers(enumBlock(values), codec.id, codec, {
@@ -118,6 +127,7 @@ describe('readEnumBlockMembers', () => {
       values: Record<string, JsonValue | undefined>,
       numberTexts: Record<string, string>,
       reading: (text: string) => WrittenValueReading | undefined,
+      codec: Codec = lowerCasingCodec,
     ) {
       const diagnostics: unknown[] = [];
       const readerInputs: unknown[] = [];
@@ -135,8 +145,8 @@ describe('readEnumBlockMembers', () => {
       };
       const members = readEnumBlockMembers(
         { ...enumBlock(values), numberTexts },
-        lowerCasingCodec.id,
-        lowerCasingCodec,
+        codec.id,
+        codec,
         ctx,
       );
       return { members, diagnostics, readerInputs };
@@ -166,7 +176,28 @@ describe('readEnumBlockMembers', () => {
       });
     });
 
-    it('reports the reason the reader refuses a number member', () => {
+    it('reads a number member the reader refuses with the codec, as an earlier version read it', () => {
+      expect(
+        readWithReader(
+          { Low: 1, Half: 1.5 },
+          { Low: '1', Half: '1.5' },
+          () => ({ ok: false, message: 'test/json has no cast from test/integer' }),
+          anyJsonCodec,
+        ),
+      ).toEqual({
+        members: [
+          { name: 'Low', value: 1 },
+          { name: 'Half', value: 1.5 },
+        ],
+        diagnostics: [],
+        readerInputs: [
+          { text: '1', codecId: 'test/any-json@1', subject: 'enum "Key" member "Low"' },
+          { text: '1.5', codecId: 'test/any-json@1', subject: 'enum "Key" member "Half"' },
+        ],
+      });
+    });
+
+    it('reports the reason the reader refuses a number member when the codec refuses it too', () => {
       expect(
         readWithReader({ Low: 1 }, { Low: '1' }, () => ({
           ok: false,

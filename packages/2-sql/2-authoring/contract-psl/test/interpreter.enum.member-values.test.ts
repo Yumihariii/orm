@@ -69,6 +69,20 @@ describe('enum members written as number literals', () => {
       values: ['0.12345678901234567890'],
     });
   });
+
+  it.each([['pg/json@1'], ['pg/jsonb@1']])(
+    'reads a %s member that no cast admits with the codec, storing the number',
+    (codecId) => {
+      expect(storedValues(codecId, ['Low = 1', 'Half = 1.5'])).toEqual({ values: [1, 1.5] });
+    },
+  );
+
+  it('reports why the number is refused when the codec refuses it too', () => {
+    expect(storedValues('pg/text@1', ['Low = 1']).diagnostics).toContainEqual({
+      code: 'PSL_EXTENSION_INVALID_VALUE',
+      message: 'enum "Key" member "Low": pg/text has no cast from pg/int2; it casts from nothing',
+    });
+  });
 });
 
 describe('enum members written as string literals are read by the codec', () => {
