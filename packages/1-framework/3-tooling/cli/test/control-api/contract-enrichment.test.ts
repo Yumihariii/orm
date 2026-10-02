@@ -217,9 +217,7 @@ describe('enrichContract', () => {
       queryOperationTypes,
       aggregateDescriptors: [],
       operationTypes,
-      storage: [
-        { typeId: 'acme/shape@1', familyId: 'sql', targetId: 'postgres', nativeType: 'shape' },
-      ],
+      storage: [{ typeId: 'acme/shape@1', familyId: 'sql', targetId: 'postgres' }],
     };
     const extension = makeExtension({ types: typesOfAnOlderPack });
 
