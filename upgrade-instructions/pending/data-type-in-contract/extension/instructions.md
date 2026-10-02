@@ -4,9 +4,10 @@ changes:
     summary: |
       A SQL contract names each column's data type in `dataType` (for example `pg/int4`) instead of
       its database type name in `nativeType`. Run the colocated script on the extension's contract
-      space and publish a release before your users upgrade the framework: a project that loads an
-      old-format contract space refuses to load. Publish a `--data-type` line for each codec the
-      extension owns.
+      space, release the extension against the framework version that contains this change, and
+      raise its peer dependency floor to that version: the old framework refuses a rewritten
+      contract space and the new framework refuses an old one, so your users upgrade the framework
+      and the extension in one step. Publish a `--data-type` line for each codec the extension owns.
     detection:
       glob: "**/*.json"
       matches:
@@ -98,7 +99,7 @@ A contract already in the new format is never changed, even when its stored hash
 
 The script knows every codec that Prisma and its own extensions ship. For each codec your extension owns, run the script with `--data-type <codec id>=<data type id>`, naming the data type that codec represents, for example `--data-type acme/shape@1=acme/shape`. Publish those lines in your release notes: your users pass the same options when they run the script on their projects. The option cannot change the data type of a codec the script already knows for a contract's target, but it can name the data type of a shared `sql/*` codec on a target the script does not know.
 
-Publish the release with the rewritten contract space before your users upgrade the framework. A project whose extensions include a contract space that still stores `nativeType` refuses to load, so your users must upgrade your extension in the same step as the framework.
+Release the extension with the rewritten contract space against the framework version that contains this change, and raise the extension's peer dependency floor on the framework to that version. The two versions cannot be mixed: the old framework refuses a contract space that stores `dataType`, and the new framework refuses one that still stores `nativeType`. So a release published early cannot be installed before the framework upgrade. Tell your users to upgrade the framework and your extension in the same step.
 
 ## `column-descriptors-drop-native-type`
 
