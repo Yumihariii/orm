@@ -1,18 +1,24 @@
-import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, sep } from 'node:path';
-import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { dirname, join, relative } from 'pathe';
+import { afterAll, describe, expect, it } from 'vitest';
+
+const SCRIPT_PATHS = {
+  app: 'upgrade-instructions/pending/data-type-in-contract/app/scripts/data-type-in-contract.ts',
+  extension:
+    'upgrade-instructions/pending/data-type-in-contract/extension/scripts/data-type-in-contract.ts',
+} as const;
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, '../../../../..');
 const fixtures = join(here, 'fixtures');
-const appScript = join(here, '..', 'app', 'scripts', 'data-type-in-contract.ts');
-const extensionScript = join(here, '..', 'extension', 'scripts', 'data-type-in-contract.ts');
+const appScript = join(repoRoot, SCRIPT_PATHS.app);
+const extensionScript = join(repoRoot, SCRIPT_PATHS.extension);
 const workDirs: string[] = [];
 
-after(() => {
+afterAll(() => {
   for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -21,7 +27,7 @@ function readTree(root: string): Record<string, string> {
   for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const path = join(entry.parentPath, entry.name);
-    files[relative(root, path).split(sep).join('/')] = readFileSync(path, 'utf8');
+    files[relative(root, path)] = readFileSync(path, 'utf8');
   }
   return files;
 }
@@ -59,27 +65,24 @@ describe('a Postgres project with an extension space and three snapshots', () =>
   const expected = expectedTree('postgres-extension-space', 'after');
 
   it('exits 0 without output', () => {
-    assert.deepEqual(
-      { status: run.status, stdout: run.stdout, stderr: run.stderr },
-      {
-        status: 0,
-        stdout: '',
-        stderr: '',
-      },
-    );
+    expect({ status: run.status, stdout: run.stdout, stderr: run.stderr }).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+    });
   });
 
   it('rewrites the emitted contract and its declarations in the emitter form', () => {
-    assert.deepEqual(
-      [tree['prisma/contract.json'], tree['prisma/contract.d.ts']],
-      [expected['prisma/contract.json'], expected['prisma/contract.d.ts']],
-    );
+    expect([tree['prisma/contract.json'], tree['prisma/contract.d.ts']]).toEqual([
+      expected['prisma/contract.json'],
+      expected['prisma/contract.d.ts'],
+    ]);
   });
 
   it('renames every snapshot directory to its new storage hash and rewrites its files', () => {
     const snapshots = (files: Record<string, string>) =>
       Object.entries(files).filter(([path]) => path.startsWith('migrations/snapshots/'));
-    assert.deepEqual(snapshots(tree), snapshots(expected));
+    expect(snapshots(tree)).toEqual(snapshots(expected));
   });
 
   it('rewrites from, to and migrationHash of every migration, refs and migration.ts imports', () => {
@@ -87,39 +90,53 @@ describe('a Postgres project with an extension space and three snapshots', () =>
       Object.entries(files).filter(
         ([path]) => path.startsWith('migrations/') && !path.startsWith('migrations/snapshots/'),
       );
-    assert.deepEqual(migrations(tree), migrations(expected));
+    expect(migrations(tree)).toEqual(migrations(expected));
   });
 
   it('leaves a contract of another family unchanged', () => {
-    assert.equal(tree['mongo/contract.json'], expected['mongo/contract.json']);
+    expect(tree['mongo/contract.json']).toBe(expected['mongo/contract.json']);
   });
 
   it('produces exactly the expected tree', () => {
-    assert.deepEqual(tree, expected);
+    expect(tree).toEqual(expected);
   });
 });
 
 describe('a SQLite project with literal defaults', () => {
   it('maps every SQLite codec and rewrites JSON and integer defaults', () => {
     const run = upgrade('sqlite-defaults');
-    assert.deepEqual(
-      { status: run.status, stdout: run.stdout, stderr: run.stderr, tree: readTree(run.root) },
-      { status: 0, stdout: '', stderr: '', tree: expectedTree('sqlite-defaults', 'after') },
-    );
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(run.root),
+    }).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      tree: expectedTree('sqlite-defaults', 'after'),
+    });
   });
 });
 
 describe('an extension package', () => {
   it('rewrites the contract space with the extension copy of the script', () => {
     const run = upgrade('extension-package', 'before', extensionScript);
-    assert.deepEqual(
-      { status: run.status, stdout: run.stdout, stderr: run.stderr, tree: readTree(run.root) },
-      { status: 0, stdout: '', stderr: '', tree: expectedTree('extension-package', 'after') },
-    );
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(run.root),
+    }).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      tree: expectedTree('extension-package', 'after'),
+    });
   });
 
   it('ships the same script to both audiences', () => {
-    assert.equal(readFileSync(extensionScript, 'utf8'), readFileSync(appScript, 'utf8'));
+    expect(readFileSync(extensionScript, 'utf8')).toBe(readFileSync(appScript, 'utf8'));
   });
 });
 
@@ -143,10 +160,10 @@ describe('a migration.ts that writes hashes as literals', () => {
     const path = join(root, 'migrations', '20260601T0000_install_vector_extension', 'migration.ts');
     writeFileSync(path, migrationTs(oldHash));
     const run = runScript(root, extensionScript);
-    assert.deepEqual(
-      { status: run.status, migrationTs: readFileSync(path, 'utf8') },
-      { status: 0, migrationTs: migrationTs(newHash) },
-    );
+    expect({ status: run.status, migrationTs: readFileSync(path, 'utf8') }).toEqual({
+      status: 0,
+      migrationTs: migrationTs(newHash),
+    });
   });
 });
 
@@ -154,20 +171,23 @@ describe('a project already in the new format', () => {
   for (const name of ['postgres-extension-space', 'sqlite-defaults', 'extension-package']) {
     it(`leaves ${name} unchanged and exits 0`, () => {
       const run = upgrade(name, 'after');
-      assert.deepEqual(
-        { status: run.status, stdout: run.stdout, stderr: run.stderr, tree: readTree(run.root) },
-        { status: 0, stdout: '', stderr: '', tree: expectedTree(name, 'after') },
-      );
+      expect({
+        status: run.status,
+        stdout: run.stdout,
+        stderr: run.stderr,
+        tree: readTree(run.root),
+      }).toEqual({ status: 0, stdout: '', stderr: '', tree: expectedTree(name, 'after') });
     });
   }
 
   it('is unchanged by a second run', () => {
     const first = upgrade('postgres-extension-space');
     const second = runScript(first.root);
-    assert.deepEqual(
-      { status: second.status, stdout: second.stdout, tree: readTree(second.root) },
-      { status: 0, stdout: '', tree: expectedTree('postgres-extension-space', 'after') },
-    );
+    expect({ status: second.status, stdout: second.stdout, tree: readTree(second.root) }).toEqual({
+      status: 0,
+      stdout: '',
+      tree: expectedTree('postgres-extension-space', 'after'),
+    });
   });
 });
 
@@ -184,7 +204,7 @@ describe('a codec the script does not know', () => {
     const snapshot = Object.keys(expectedTree('unknown-codec', 'before')).find(
       (path) => path.startsWith('migrations/snapshots/') && path.endsWith('/contract.json'),
     );
-    assert.deepEqual(unchanged(run), {
+    expect(unchanged(run)).toEqual({
       status: 1,
       stdout: '',
       stderr: [
@@ -201,7 +221,7 @@ describe('a codec the script does not know', () => {
       '--data-type',
       'acme/shape@1=acme/shape',
     ]);
-    assert.deepEqual(unchanged(run), {
+    expect(unchanged(run)).toEqual({
       status: 0,
       stdout: '',
       stderr: '',
@@ -215,7 +235,7 @@ describe('a codec the script does not know', () => {
         '--data-type',
         value,
       ]);
-      assert.deepEqual(unchanged(run), {
+      expect(unchanged(run)).toEqual({
         status: 1,
         stdout: '',
         stderr: `--data-type ${value}: expected <codec id>=<data type id>, for example acme/shape@1=acme/shape\n`,
@@ -231,7 +251,7 @@ describe('a codec the script does not know', () => {
       '--data-type',
       'pg/uuid@1=pg/text',
     ]);
-    assert.deepEqual(unchanged(run), {
+    expect(unchanged(run)).toEqual({
       status: 1,
       stdout: '',
       stderr: '--data-type pg/uuid@1=pg/text: the script already maps pg/uuid@1 to pg/uuid\n',
@@ -243,44 +263,50 @@ describe('a codec the script does not know', () => {
 describe('a snapshot directory that already holds the new hash', () => {
   it('stops when its content differs, changes no file and exits 1', () => {
     const run = upgrade('snapshot-collision');
-    assert.deepEqual(
-      { status: run.status, stdout: run.stdout, stderr: run.stderr, tree: readTree(run.root) },
-      {
-        status: 1,
-        stdout: '',
-        stderr:
-          'migrations/snapshots/d3a277a78b83a532f1ce006d0b7b5e059cc9d15a440922acd9df1055156afbf2: snapshot directory already exists with different content\n',
-        tree: expectedTree('snapshot-collision', 'before'),
-      },
-    );
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(run.root),
+    }).toEqual({
+      status: 1,
+      stdout: '',
+      stderr:
+        'migrations/snapshots/d3a277a78b83a532f1ce006d0b7b5e059cc9d15a440922acd9df1055156afbf2: snapshot directory already exists with different content\n',
+      tree: expectedTree('snapshot-collision', 'before'),
+    });
   });
 
   it('removes the old directory when the content is the same', () => {
     const run = upgrade('snapshot-already-present');
-    assert.deepEqual(
-      { status: run.status, stdout: run.stdout, stderr: run.stderr, tree: readTree(run.root) },
-      {
-        status: 0,
-        stdout: '',
-        stderr: '',
-        tree: expectedTree('snapshot-already-present', 'after'),
-      },
-    );
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(run.root),
+    }).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+      tree: expectedTree('snapshot-already-present', 'after'),
+    });
   });
 });
 
 describe('a snapshot whose stored hash does not recompute', () => {
   it('rehashes it from content, says so and rewrites everything that names it', () => {
     const run = upgrade('stale-hash');
-    assert.deepEqual(
-      { status: run.status, stdout: run.stdout, stderr: run.stderr, tree: readTree(run.root) },
-      {
-        status: 0,
-        stdout: `migrations/snapshots/${'a'.repeat(64)}/contract.json: stored hash did not recompute; rehashed from content\n`,
-        stderr: '',
-        tree: expectedTree('stale-hash', 'after'),
-      },
-    );
+    expect({
+      status: run.status,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      tree: readTree(run.root),
+    }).toEqual({
+      status: 0,
+      stdout: `migrations/snapshots/${'a'.repeat(64)}/contract.json: stored hash did not recompute; rehashed from content\n`,
+      stderr: '',
+      tree: expectedTree('stale-hash', 'after'),
+    });
   });
 });
 
@@ -288,9 +314,9 @@ describe('the project root', () => {
   it('defaults to the working directory', () => {
     const root = copyFixture('sqlite-defaults', 'before');
     const result = spawnSync(process.execPath, [appScript], { cwd: root, encoding: 'utf8' });
-    assert.deepEqual(
-      { status: result.status, tree: readTree(root) },
-      { status: 0, tree: expectedTree('sqlite-defaults', 'after') },
-    );
+    expect({ status: result.status, tree: readTree(root) }).toEqual({
+      status: 0,
+      tree: expectedTree('sqlite-defaults', 'after'),
+    });
   });
 });

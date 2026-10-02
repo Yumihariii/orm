@@ -1,14 +1,11 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { canonicalizeContractToObject } from '../../../../packages/1-framework/0-foundation/contract/src/canonicalization';
-import type { Contract } from '../../../../packages/1-framework/0-foundation/contract/src/contract-types';
-import { canonicalizeJson } from '../../../../packages/1-framework/1-core/framework-components/src/utils/canonicalize-json';
-import {
-  computeMigrationHash,
-  recomputePublishedStorageHash,
-} from '../../../../packages/1-framework/3-tooling/migration/src/hash';
-import { sqlContractCanonicalizationHooks } from '../../../../packages/2-sql/1-core/contract/src/canonicalization-hooks';
+import { canonicalizeContractToObject, computeStorageHash } from '@internal/contract/hashing';
+import type { Contract } from '@internal/contract/types';
+import { canonicalizeJson } from '@internal/framework-components/utils';
+import { computeMigrationHash } from '@internal/migration-tools/hash';
+import { sqlContractCanonicalizationHooks } from '@internal/sql-contract/canonicalization-hooks';
+import { dirname, join } from 'pathe';
 
 type Format = 'old' | 'new';
 type Json = null | boolean | number | string | readonly Json[] | { readonly [key: string]: Json };
@@ -115,11 +112,11 @@ function storageJson(spec: ContractSpec, format: Format): Record<string, Json> {
 }
 
 function storageHashOf(spec: ContractSpec, format: Format): string {
-  return recomputePublishedStorageHash({
+  return computeStorageHash({
     target: spec.target,
     targetFamily: 'sql',
     storage: storageJson(spec, format),
-    hooks: sqlContractCanonicalizationHooks,
+    ...sqlContractCanonicalizationHooks,
   });
 }
 

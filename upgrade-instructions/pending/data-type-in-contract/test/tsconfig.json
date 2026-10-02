@@ -1,9 +1,0 @@
-{
-  "extends": "@repo/tsconfig/base",
-  "compilerOptions": {
-    "lib": ["ES2024"],
-    "types": ["node"],
-    "noEmit": true
-  },
-  "include": ["*.ts", "../app/scripts/*.ts", "../extension/scripts/*.ts"]
-}

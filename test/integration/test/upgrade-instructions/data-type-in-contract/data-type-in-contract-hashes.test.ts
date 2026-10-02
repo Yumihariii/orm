@@ -6,10 +6,7 @@ import { sqlContractCanonicalizationHooks } from '@internal/sql-contract/canonic
 import { basename, dirname, join, relative } from 'pathe';
 import { describe, expect, it } from 'vitest';
 
-const fixturesRoot = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../../upgrade-instructions/pending/data-type-in-contract/test/fixtures',
-);
+const fixturesRoot = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const verifier = createSnapshotContentVerifier(sqlContractCanonicalizationHooks);
 
 function afterFiles(): string[] {
