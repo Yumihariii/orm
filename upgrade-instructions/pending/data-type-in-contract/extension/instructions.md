@@ -20,22 +20,36 @@ changes:
       `columnFromEntity` returns `{ typeParams }` only. The contract takes a column's data type from
       its codec. A `types` constraint over what `type.*` helpers return is
       `Record<string, AuthoredStorageType>` instead of `Record<string, StorageTypeInstance>`.
+      `StorageTypeInstanceInput` is no longer exported; type a stored entry as
+      `StorageTypeInstance`, or pass `toStorageTypeInstance` an object literal.
     detection:
       glob: "**/*.{ts,mts,cts}"
       matches:
         - '(?<![\w$])(?<!readonly\s+)nativeType\s*:'
         - '(?<![\w$.])column\s*\((?:[^()]|\([^()]*\))*,(?:[^()]|\([^()]*\))*,(?:[^()]|\([^()]*\))*,\s*[\w''"](?:[^()]|\([^()]*\))*\)'
         - '\bRecord\s*<\s*string\s*,\s*StorageTypeInstance\s*>'
+        - '\bStorageTypeInstanceInput\b'
   - id: default-renderer-receives-data-type
     summary: |
-      `DefaultRenderer`'s third argument is the object `{ dataType, typeText }` instead of the string
-      `dataType`: the id of the data type the column's codec represents and its written name
-      without parameters. `DdlColumnRenderContext.nativeType`
-      is renamed `typeText`.
+      `DefaultRenderer` receives a third argument, `{ dataType, baseTypeName }`: the id of the data
+      type the column's codec represents, and its base name (the written name without
+      parameters). The Postgres `renderDefaultLiteral` takes `{ many?, baseTypeName, dataType }`
+      instead of `{ many?, nativeType, dataTypeId? }`, and `dataType` is required.
     detection:
       glob: "**/*.{ts,mts,cts}"
       matches:
         - '\bDefaultRenderer\b'
+        - '\brenderDefaultLiteral\b'
+        - '\bDefaultColumn\b'
+  - id: ddl-column-default-visitor-removed
+    summary: |
+      `DdlColumnDefaultVisitor`, `DdlColumnRenderContext` and the `accept` method of
+      `LiteralColumnDefault` and `FunctionColumnDefault` are removed. Nothing in Prisma Next called
+      them.
+    detection:
+      glob: "**/*.{ts,mts,cts}"
+      matches:
+        - '\bDdlColumnDefaultVisitor\b'
         - '\bDdlColumnRenderContext\b'
   - id: control-family-instance-sign-spaces
     summary: |
@@ -169,15 +183,27 @@ Update doc comments and examples that describe what a helper produces: `// Produ
 
 ```ts
 // before
-const renderDefault: DefaultRenderer = (def, column, dataType) => render(def, dataType);
-const visit = (node: LiteralColumnDefault, ctx: DdlColumnRenderContext) => cast(node, ctx.nativeType);
+const renderDefault: DefaultRenderer = (def, column) => render(def);
+renderDefaultLiteral(value, { many: true, nativeType: 'text', dataTypeId: 'pg/text' });
 
 // after
-const renderDefault: DefaultRenderer = (def, column, type) => render(def, type.typeText);
-const visit = (node: LiteralColumnDefault, ctx: DdlColumnRenderContext) => cast(node, ctx.typeText);
+const renderDefault: DefaultRenderer = (def, column, type) => render(def, type.baseTypeName);
+renderDefaultLiteral(value, { many: true, baseTypeName: 'text', dataType: 'pg/text' });
 ```
 
-`typeText` is the type's written name without parameters, for example `jsonb` or `varchar`. Compare `dataType`, for example `pg/jsonb`, when the decision depends on which type the column stores.
+`baseTypeName` is the type's written name without parameters, for example `jsonb` or `varchar`. Compare `dataType`, for example `pg/jsonb`, when the decision depends on which type the column stores.
+
+## `ddl-column-default-visitor-removed`
+
+Code that dispatched a column default through `accept` reads its `kind` instead:
+
+```ts
+// before
+const sql = node.accept({ literal: (n, ctx) => renderLiteral(n, ctx.nativeType), function: (n) => n.expression }, { nativeType: 'jsonb' });
+
+// after
+const sql = node.kind === 'literal' ? renderLiteral(node, 'jsonb') : node.expression;
+```
 
 ## `control-family-instance-sign-spaces`
 
@@ -220,7 +246,9 @@ export class MyDatetimeDescriptor extends SqliteCodecDescriptor<void> {
   override readonly toCanonicalForm = datetimeCanonicalForm;
   // codecId, traits, the JSON projection and the factory follow
 }
-``` Because both big integer codecs store digit text, a migration planned for a SQLite `BigInt` column with a literal default writes `DEFAULT 42` instead of `DEFAULT '42'`; tests that assert planned SQLite SQL change to match. A database created with `DEFAULT '42'` still verifies.
+```
+
+Because both big integer codecs store digit text, a migration planned for a SQLite `BigInt` column with a literal default writes `DEFAULT 42` instead of `DEFAULT '42'`; tests that assert planned SQLite SQL change to match. A database created with `DEFAULT '42'` still verifies.
 
 ## `authoring-entry-key-checked`
 
