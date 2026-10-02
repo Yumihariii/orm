@@ -60,7 +60,6 @@ export type {
   StorageColumnTypesOf,
   StorageTableInput,
   StorageTypeInstance,
-  StorageTypeInstanceInput,
   StorageValueSetInput,
   TypeMaps,
   TypeMapsPhantomKey,
