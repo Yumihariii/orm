@@ -74,6 +74,7 @@ export type {
   AttributeLevel,
   AttributeOut,
   AttributeSpec,
+  BlockAttributeCtx,
   DataTypeValueArgType,
   EntityRefArgType,
   FieldAttributeCtx,

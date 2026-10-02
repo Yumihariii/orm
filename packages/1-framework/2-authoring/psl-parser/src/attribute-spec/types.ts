@@ -13,7 +13,7 @@ import type {
   ResolvedEntityReference,
 } from '../entity-reference';
 import type { PslSources } from '../source-file';
-import type { FieldSymbol, ModelSymbol, SymbolTable } from '../symbol-table';
+import type { BlockSymbol, FieldSymbol, ModelSymbol, SymbolTable } from '../symbol-table';
 import type { ExpressionAst } from '../syntax/ast/expressions';
 import type { AstNode } from '../syntax/ast-helpers';
 
@@ -27,6 +27,10 @@ export interface AttributeCtx {
 
 export interface ModelAttributeCtx extends AttributeCtx {
   readonly selfModel: ModelSymbol;
+}
+
+export interface BlockAttributeCtx extends AttributeCtx {
+  readonly selfBlock: BlockSymbol;
 }
 
 export interface FieldAttributeCtx extends ModelAttributeCtx {
