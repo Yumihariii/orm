@@ -10,6 +10,6 @@
     "dist",
     "test/fixtures/**/*",
     "test/authoring/templates/**/*",
-    "test/upgrade-instructions/data-type-in-contract/fixtures/**/*"
+    "test/upgrade-instructions/*/fixtures/**/*"
   ]
 }

@@ -1,3 +1,6 @@
+/**
+ * Writes the `before` and `after` fixture projects the upgrade script's tests read, computing every hash with the live framework functions. Run it in `test/integration` with `pnpm exec tsx test/upgrade-instructions/data-type-in-contract/generate-fixtures.ts`, then `pnpm lint:fix`. It holds only while the script is pending: at release it is frozen or deleted with the hash test (see step 4 of `skills-contrib/record-upgrade-instructions/SKILL.md`).
+ */
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { canonicalizeContractToObject, computeStorageHash } from '@internal/contract/hashing';

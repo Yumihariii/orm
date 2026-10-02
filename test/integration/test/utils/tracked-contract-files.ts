@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
 
 /**
- * Paths of committed JSON files that are not the repository's own contracts: the upgrade script's test fixtures (synthetic, some in the old format) and the old-format contract that tests the refusal.
+ * Paths of committed JSON files that are not the repository's own contracts: the fixtures of every upgrade script's tests (synthetic, some in the old format) and the old-format contract that tests the refusal.
  */
 const notRepositoryContracts = [
-  ':!test/integration/test/upgrade-instructions/data-type-in-contract/fixtures',
+  ':(exclude,glob)test/integration/test/upgrade-instructions/*/fixtures/**',
   ':!test/integration/test/fixtures/contract-format/supabase-before-dbgenerated-removal.contract.json',
 ];
 
