@@ -5,6 +5,8 @@ const DATE_OID = 1082;
 const TIME_OID = 1083;
 const TIMESTAMP_OID = 1114;
 const TIMESTAMPTZ_OID = 1184;
+const JSON_OID = 114;
+const JSONB_OID = 3802;
 
 export const PG_TYPES_ARRAY_OIDS: ReadonlySet<number> = new Set([
   651, 791, 199, 1000, 1001, 1005, 1007, 1008, 1009, 1014, 1015, 1016, 1017, 1021, 1022, 1028, 1040,
@@ -46,5 +48,6 @@ function createTextTypes(rawTextOids: ReadonlySet<number>): CustomTypesConfig {
 
 export const controlTextTypes = createTextTypes(PG_TYPES_ARRAY_OIDS);
 export const temporalTextTypes = createTextTypes(
-  new Set([...TEMPORAL_SCALAR_OIDS, ...PG_TYPES_ARRAY_OIDS]),
+  // JSON codecs must receive wire text, including quotes around scalar strings.
+  new Set([JSON_OID, JSONB_OID, ...TEMPORAL_SCALAR_OIDS, ...PG_TYPES_ARRAY_OIDS]),
 );

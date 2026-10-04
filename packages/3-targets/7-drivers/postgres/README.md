@@ -27,7 +27,7 @@ Provide PostgreSQL transport and connection management. Execute SQL statements a
 
 - **Connection Management**: Acquire and release database connections
 - **Statement Execution**: Execute SQL statements with parameters
-- **Query Result Parser Policy**: Configure `pg` so query rows expose temporal scalars and registered array OIDs as raw server text where the runtime or adapter owns decoding
+- **Query Result Parser Policy**: Configure `pg` so query rows expose JSON, temporal scalars, and registered array OIDs as raw server text where the runtime or adapter owns decoding
 - **Query Explanation**: Execute EXPLAIN queries for query analysis
 - **Connection Pooling**: Manage connection pools (when applicable)
 - **Transport Protocol**: Handle PostgreSQL protocol (TCP, HTTP, etc.)
@@ -79,6 +79,8 @@ flowchart TD
 ### Row parser policy
 
 Buffered and cursor query paths pass `temporalTextTypes` to `pg`. That policy returns raw server text for temporal scalar OIDs and for every array OID registered by `pg-types`; unknown array OIDs already arrive as raw text from `pg`. Runtime decoding for contract-declared list columns then parses the raw array text in the Postgres target and maps the scalar element codec. Direct driver query consumers that read array-valued columns see Postgres array literal strings such as `'{a,b}'`, not driver-framed JavaScript arrays.
+
+The same policy returns `json` and `jsonb` as text so their codecs decode each value once. A stored JSON string such as `"standard"` retains its quotes until codec decoding. The policy is scoped to each driver query; caller-owned clients and the global `pg` type parsers keep their defaults.
 
 ## Related Subsystems
 
