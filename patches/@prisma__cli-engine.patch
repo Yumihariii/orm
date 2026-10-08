@@ -1,8 +1,8 @@
 diff --git a/dist/engine-DVJ5Ie5H.js b/dist/engine-DVJ5Ie5H.js
-index 15550b8bab3dc18125964531a3a115d2d00a0e42..30acc2f87adf7923260fba36f935c1d00828c400 100644
+index 062a272..6a03b9b 100644
 --- a/dist/engine-DVJ5Ie5H.js
 +++ b/dist/engine-DVJ5Ie5H.js
-@@ -5172,8 +5172,10 @@ function emitErrored(invocation, raw) {
+@@ -5593,8 +5593,10 @@ function emitErrored(invocation, raw) {
  *  version travels as the run's single result frame. */
  function settleVersion(spec, invocation) {
  	const { runtime, state } = invocation;
@@ -13,7 +13,7 @@ index 15550b8bab3dc18125964531a3a115d2d00a0e42..30acc2f87adf7923260fba36f935c1d0
  		return 0;
  	}
  	emitFrame(invocation, {
-@@ -5181,7 +5183,7 @@ function settleVersion(spec, invocation) {
+@@ -5602,7 +5604,7 @@ function settleVersion(spec, invocation) {
  		envelope: {
  			ok: true,
  			commandId: "version",
@@ -22,7 +22,7 @@ index 15550b8bab3dc18125964531a3a115d2d00a0e42..30acc2f87adf7923260fba36f935c1d0
  			exitCode: 0,
  			diagnostics: [],
  			nextActions: []
-@@ -5191,6 +5193,11 @@ function settleVersion(spec, invocation) {
+@@ -5612,6 +5614,11 @@ function settleVersion(spec, invocation) {
  	});
  	return 0;
  }
